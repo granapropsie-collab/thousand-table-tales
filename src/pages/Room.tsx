@@ -1,54 +1,87 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
-import { ArrowLeft, Play, Users, Music, Crown } from 'lucide-react';
+import { ArrowLeft, Play, Users, Music, Crown, Copy, Check } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { TeamSelector } from '@/components/TeamSelector';
 import { PlayerAvatar } from '@/components/PlayerAvatar';
-import { Player } from '@/types/game';
+import { useGameState, RoomPlayer } from '@/hooks/useGameState';
 import { toast } from 'sonner';
 import { cn } from '@/lib/utils';
-
-// Mock data
-const mockPlayers: Player[] = [
-  { id: '1', nickname: 'Wyga Billy', team: 'A', isReady: true, isHost: true, cards: [], isCurrentTurn: false },
-  { id: '2', nickname: 'Calamity Jane', team: 'A', isReady: true, isHost: false, cards: [], isCurrentTurn: false },
-  { id: '3', nickname: 'Doc Holliday', team: 'B', isReady: false, isHost: false, cards: [], isCurrentTurn: false },
-];
-
-const currentPlayerId = '1'; // Would come from auth
 
 const Room = () => {
   const navigate = useNavigate();
   const { roomId } = useParams();
-  const [players, setPlayers] = useState<Player[]>(mockPlayers);
-  const [teamNames, setTeamNames] = useState({ A: 'Betoniarze', B: 'Asy Kier' });
-  const [withMusik] = useState(true);
+  const { 
+    room, 
+    playerId, 
+    isHost, 
+    currentPlayer,
+    selectTeam, 
+    updateTeamName, 
+    setReady, 
+    startGame, 
+    leaveRoom 
+  } = useGameState(roomId);
 
-  const currentPlayer = players.find((p) => p.id === currentPlayerId);
-  const isHost = currentPlayer?.isHost;
-  const teamAPlayers = players.filter((p) => p.team === 'A');
-  const teamBPlayers = players.filter((p) => p.team === 'B');
-  const canStartGame = players.length === 4 && teamAPlayers.length === 2 && teamBPlayers.length === 2;
+  const [copied, setCopied] = useState(false);
 
-  const handleJoinTeam = (teamId: 'A' | 'B') => {
-    setPlayers((prev) =>
-      prev.map((p) => (p.id === currentPlayerId ? { ...p, team: teamId } : p))
+  // Redirect to game when it starts
+  useEffect(() => {
+    if (room?.status === 'playing') {
+      navigate(`/game/${roomId}`);
+    }
+  }, [room?.status, roomId, navigate]);
+
+  if (!room) {
+    return (
+      <div className="min-h-screen wood-texture flex items-center justify-center">
+        <div className="text-cream text-xl font-display animate-pulse">
+          Ładowanie pokoju...
+        </div>
+      </div>
     );
-    toast.success(`Dołączyłeś do drużyny ${teamNames[teamId]}`);
+  }
+
+  const teamAPlayers = room.room_players.filter((p) => p.team === 'A');
+  const teamBPlayers = room.room_players.filter((p) => p.team === 'B');
+  const canStartGame = room.room_players.length === 4 && teamAPlayers.length === 2 && teamBPlayers.length === 2;
+
+  const handleJoinTeam = async (team: 'A' | 'B') => {
+    await selectTeam(team);
+    toast.success(`Dołączyłeś do drużyny ${team === 'A' ? room.team_a_name : room.team_b_name}`);
   };
 
-  const handleUpdateTeamName = (teamId: 'A' | 'B', name: string) => {
-    setTeamNames((prev) => ({ ...prev, [teamId]: name }));
+  const handleUpdateTeamName = async (teamId: 'A' | 'B', name: string) => {
+    await updateTeamName(teamId, name);
   };
 
-  const handleStartGame = () => {
-    toast.success('Rozpoczynanie gry...');
-    navigate(`/game/${roomId}`);
+  const handleStartGame = async () => {
+    await startGame();
   };
 
-  const handleLeaveRoom = () => {
+  const handleLeaveRoom = async () => {
+    await leaveRoom();
     navigate('/');
   };
+
+  const handleCopyLink = () => {
+    const link = `${window.location.origin}/room/${roomId}`;
+    navigator.clipboard.writeText(link);
+    setCopied(true);
+    toast.success('Skopiowano link!');
+    setTimeout(() => setCopied(false), 2000);
+  };
+
+  // Convert RoomPlayer to Player format for TeamSelector
+  const convertPlayer = (p: RoomPlayer) => ({
+    id: p.player_id,
+    nickname: p.nickname,
+    team: p.team,
+    isReady: p.is_ready,
+    isHost: p.is_host,
+    cards: [],
+    isCurrentTurn: false,
+  });
 
   return (
     <div className="min-h-screen wood-texture">
@@ -62,8 +95,8 @@ const Room = () => {
             </Button>
             
             <div className="flex items-center gap-3">
-              <h1 className="text-2xl font-display gold-text">Pokój: {roomId}</h1>
-              {withMusik && (
+              <h1 className="text-2xl font-display gold-text">{room.name}</h1>
+              {room.with_musik && (
                 <span className="flex items-center gap-1 text-xs px-2 py-1 rounded-full bg-gold/20 text-gold">
                   <Music className="w-3 h-3" />
                   Z musikiem
@@ -73,7 +106,7 @@ const Room = () => {
             
             <div className="flex items-center gap-2 text-muted-foreground">
               <Users className="w-5 h-5" />
-              <span>{players.length}/4</span>
+              <span>{room.room_players.length}/4</span>
             </div>
           </div>
         </div>
@@ -88,7 +121,7 @@ const Room = () => {
           </h2>
           
           <div className="flex flex-wrap gap-4 justify-center p-6 rounded-xl bg-card/50 border border-border">
-            {players.map((player, index) => (
+            {room.room_players.map((player, index) => (
               <div
                 key={player.id}
                 className={cn(
@@ -103,24 +136,24 @@ const Room = () => {
                     team={player.team}
                     size="lg"
                   />
-                  {player.isHost && (
+                  {player.is_host && (
                     <Crown className="absolute -top-2 -right-2 w-5 h-5 text-gold" />
                   )}
                 </div>
                 <span
                   className={cn(
                     'text-xs px-2 py-0.5 rounded-full',
-                    player.isReady
+                    player.is_ready
                       ? 'bg-status-active/20 text-status-active'
                       : 'bg-status-waiting/20 text-status-waiting'
                   )}
                 >
-                  {player.isReady ? 'Gotowy' : 'Oczekuje'}
+                  {player.is_ready ? 'Gotowy' : 'Oczekuje'}
                 </span>
               </div>
             ))}
             
-            {Array.from({ length: 4 - players.length }).map((_, i) => (
+            {Array.from({ length: 4 - room.room_players.length }).map((_, i) => (
               <div
                 key={`empty-${i}`}
                 className="flex flex-col items-center gap-2 p-4 rounded-lg bg-secondary/30 border border-dashed border-muted"
@@ -141,19 +174,19 @@ const Room = () => {
           <div className="grid md:grid-cols-2 gap-6">
             <TeamSelector
               teamId="A"
-              teamName={teamNames.A}
-              players={teamAPlayers}
-              currentPlayerId={currentPlayerId}
-              isEditable={isHost || false}
+              teamName={room.team_a_name}
+              players={teamAPlayers.map(convertPlayer)}
+              currentPlayerId={playerId}
+              isEditable={isHost}
               onJoinTeam={handleJoinTeam}
               onUpdateName={(name) => handleUpdateTeamName('A', name)}
             />
             <TeamSelector
               teamId="B"
-              teamName={teamNames.B}
-              players={teamBPlayers}
-              currentPlayerId={currentPlayerId}
-              isEditable={isHost || false}
+              teamName={room.team_b_name}
+              players={teamBPlayers.map(convertPlayer)}
+              currentPlayerId={playerId}
+              isEditable={isHost}
               onJoinTeam={handleJoinTeam}
               onUpdateName={(name) => handleUpdateTeamName('B', name)}
             />
@@ -185,19 +218,16 @@ const Room = () => {
         {/* Room Link */}
         <section className="animate-fade-in text-center" style={{ animationDelay: '0.3s' }}>
           <div className="inline-flex items-center gap-3 px-6 py-3 rounded-lg bg-secondary/50 border border-border">
-            <span className="text-muted-foreground text-sm">Link do pokoju:</span>
-            <code className="text-gold font-mono text-sm">
-              {window.location.origin}/room/{roomId}
+            <span className="text-muted-foreground text-sm">Kod pokoju:</span>
+            <code className="text-gold font-mono text-lg font-bold">
+              {room.code}
             </code>
             <Button
               variant="outline"
               size="sm"
-              onClick={() => {
-                navigator.clipboard.writeText(`${window.location.origin}/room/${roomId}`);
-                toast.success('Skopiowano link!');
-              }}
+              onClick={handleCopyLink}
             >
-              Kopiuj
+              {copied ? <Check className="w-4 h-4" /> : <Copy className="w-4 h-4" />}
             </Button>
           </div>
         </section>

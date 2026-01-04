@@ -1,70 +1,99 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import { ArrowLeft, MessageSquare } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { GameTable } from '@/components/GameTable';
-import { Player, Card, Suit } from '@/types/game';
+import { useGameState } from '@/hooks/useGameState';
 import { cn } from '@/lib/utils';
-
-// Mock data for demonstration
-const generateMockCards = (count: number): Card[] => {
-  const suits: Suit[] = ['hearts', 'diamonds', 'clubs', 'spades'];
-  const ranks: ('A' | '10' | 'K' | 'Q' | 'J' | '9')[] = ['A', '10', 'K', 'Q', 'J', '9'];
-  const cards: Card[] = [];
-  
-  for (let i = 0; i < count; i++) {
-    cards.push({
-      id: `card-${i}`,
-      suit: suits[i % 4],
-      rank: ranks[i % 6],
-    });
-  }
-  
-  return cards;
-};
-
-const mockPlayers: Player[] = [
-  { id: '1', nickname: 'Ty', team: 'A', isReady: true, isHost: true, cards: generateMockCards(5), isCurrentTurn: true },
-  { id: '2', nickname: 'Doc Holliday', team: 'B', isReady: true, isHost: false, cards: generateMockCards(5), isCurrentTurn: false },
-  { id: '3', nickname: 'Calamity Jane', team: 'A', isReady: true, isHost: false, cards: generateMockCards(5), isCurrentTurn: false },
-  { id: '4', nickname: 'Wild Bill', team: 'B', isReady: true, isHost: false, cards: generateMockCards(5), isCurrentTurn: false },
-];
-
-const mockTrick: Card[] = [
-  { id: 'trick-1', suit: 'hearts', rank: 'K' },
-  { id: 'trick-2', suit: 'hearts', rank: '10' },
-];
-
-const currentPlayerId = '1';
+import tableFeltImage from '@/assets/table-felt.jpg';
 
 const Game = () => {
   const navigate = useNavigate();
   const { gameId } = useParams();
-  const [players] = useState<Player[]>(mockPlayers);
-  const [currentTrick] = useState<Card[]>(mockTrick);
-  const [trump] = useState<Suit>('hearts');
-  const [teamScores] = useState({ A: 340, B: 280 });
-  const [teamNames] = useState({ A: 'Betoniarze', B: 'Asy Kier' });
-  const [showBidding, setShowBidding] = useState(false);
-  const [currentBid, setCurrentBid] = useState(100);
+  const { 
+    room, 
+    currentTrick, 
+    playerId, 
+    isMyTurn, 
+    bid, 
+    pass, 
+    selectTrump, 
+    playCard, 
+    leaveRoom 
+  } = useGameState(gameId);
 
-  const handleLeaveGame = () => {
-    // In real app, would confirm and handle cleanup
+  const [showBidding, setShowBidding] = useState(false);
+  const [showTrumpSelect, setShowTrumpSelect] = useState(false);
+
+  // Show bidding modal when in bidding phase and it's my turn
+  useEffect(() => {
+    if (room?.phase === 'bidding' && isMyTurn) {
+      setShowBidding(true);
+    } else {
+      setShowBidding(false);
+    }
+  }, [room?.phase, isMyTurn]);
+
+  // Show trump selection for bid winner
+  useEffect(() => {
+    if (room?.phase === 'playing' && room.bid_winner_id === playerId && !room.current_trump) {
+      setShowTrumpSelect(true);
+    } else {
+      setShowTrumpSelect(false);
+    }
+  }, [room?.phase, room?.bid_winner_id, room?.current_trump, playerId]);
+
+  const handleLeaveGame = async () => {
+    await leaveRoom();
     navigate('/');
   };
 
-  const handleBid = (amount: number) => {
-    setCurrentBid(amount);
-    // Would send to server
+  const handleBid = async (amount: number) => {
+    await bid(amount);
   };
 
-  const handlePass = () => {
-    setShowBidding(false);
-    // Would send to server
+  const handlePass = async () => {
+    await pass();
   };
+
+  const handleSelectTrump = async (trump: string) => {
+    await selectTrump(trump);
+    setShowTrumpSelect(false);
+  };
+
+  const handlePlayCard = async (cardId: string) => {
+    await playCard(cardId);
+  };
+
+  if (!room) {
+    return (
+      <div 
+        className="min-h-screen flex items-center justify-center"
+        style={{ 
+          backgroundImage: `url(${tableFeltImage})`,
+          backgroundSize: 'cover',
+          backgroundPosition: 'center',
+        }}
+      >
+        <div className="text-cream text-xl font-display animate-pulse">
+          Ładowanie gry...
+        </div>
+      </div>
+    );
+  }
 
   return (
-    <div className="min-h-screen felt-texture vignette overflow-hidden">
+    <div 
+      className="min-h-screen overflow-hidden relative"
+      style={{ 
+        backgroundImage: `url(${tableFeltImage})`,
+        backgroundSize: 'cover',
+        backgroundPosition: 'center',
+      }}
+    >
+      {/* Vignette overlay */}
+      <div className="absolute inset-0 vignette pointer-events-none" />
+
       {/* Header */}
       <header className="fixed top-0 left-0 right-0 z-50 bg-background/80 backdrop-blur-sm border-b border-border/50">
         <div className="container mx-auto px-4 py-2">
@@ -74,7 +103,7 @@ const Game = () => {
               Wyjdź
             </Button>
             
-            <h1 className="text-lg font-display gold-text">Tysiąc</h1>
+            <h1 className="text-lg font-display gold-text">Tysiąc - Runda {room.round_number}</h1>
             
             <Button variant="ghost" size="sm">
               <MessageSquare className="w-4 h-4" />
@@ -84,14 +113,13 @@ const Game = () => {
       </header>
 
       {/* Game Table */}
-      <main className="pt-16 pb-8 px-4 h-screen flex items-center justify-center">
+      <main className="pt-16 pb-8 px-4 h-screen flex items-center justify-center relative z-10">
         <GameTable
-          players={players}
-          currentPlayerId={currentPlayerId}
+          room={room}
           currentTrick={currentTrick}
-          trump={trump}
-          teamScores={teamScores}
-          teamNames={teamNames}
+          playerId={playerId}
+          onPlayCard={handlePlayCard}
+          isMyTurn={isMyTurn}
         />
       </main>
 
@@ -103,7 +131,7 @@ const Game = () => {
             
             <div className="text-center mb-6">
               <span className="text-muted-foreground">Aktualna oferta:</span>
-              <span className="text-3xl font-display text-gold ml-3">{currentBid}</span>
+              <span className="text-3xl font-display text-gold ml-3">{room.current_bid}</span>
             </div>
             
             <div className="grid grid-cols-3 gap-3 mb-6">
@@ -111,7 +139,7 @@ const Game = () => {
                 <Button
                   key={increment}
                   variant="outline"
-                  onClick={() => handleBid(currentBid + increment)}
+                  onClick={() => handleBid(room.current_bid + increment)}
                 >
                   +{increment}
                 </Button>
@@ -122,29 +150,57 @@ const Game = () => {
               <Button variant="destructive" className="flex-1" onClick={handlePass}>
                 Pas
               </Button>
-              <Button variant="gold" className="flex-1" onClick={() => setShowBidding(false)}>
-                Licytuję {currentBid + 10}
+              <Button variant="gold" className="flex-1" onClick={() => handleBid(room.current_bid + 10)}>
+                Licytuję {room.current_bid + 10}
               </Button>
             </div>
           </div>
         </div>
       )}
 
-      {/* Meld Indicator (when applicable) */}
-      <div className="fixed bottom-4 left-4 bg-card/90 backdrop-blur px-4 py-2 rounded-lg border border-gold/30">
-        <span className="text-muted-foreground text-sm mr-2">Meldunki:</span>
-        <span className="text-gold">👑👸 Kier (100)</span>
-      </div>
-
-      {/* Demo Toggle */}
-      <Button
-        variant="secondary"
-        size="sm"
-        className="fixed bottom-4 right-4"
-        onClick={() => setShowBidding(!showBidding)}
-      >
-        {showBidding ? 'Zamknij licytację' : 'Pokaż licytację'}
-      </Button>
+      {/* Trump Selection Modal */}
+      {showTrumpSelect && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-background/80 backdrop-blur-sm">
+          <div className="bg-card border border-border rounded-xl p-6 max-w-md w-full mx-4 animate-scale-in">
+            <h2 className="text-xl font-display text-cream text-center mb-6">Wybierz Atut</h2>
+            
+            <div className="grid grid-cols-2 gap-4">
+              <Button 
+                variant="outline" 
+                size="lg" 
+                className="text-red-500 text-3xl h-20"
+                onClick={() => handleSelectTrump('hearts')}
+              >
+                ♥ Kier
+              </Button>
+              <Button 
+                variant="outline" 
+                size="lg" 
+                className="text-red-500 text-3xl h-20"
+                onClick={() => handleSelectTrump('diamonds')}
+              >
+                ♦ Karo
+              </Button>
+              <Button 
+                variant="outline" 
+                size="lg" 
+                className="text-cream text-3xl h-20"
+                onClick={() => handleSelectTrump('clubs')}
+              >
+                ♣ Trefl
+              </Button>
+              <Button 
+                variant="outline" 
+                size="lg" 
+                className="text-cream text-3xl h-20"
+                onClick={() => handleSelectTrump('spades')}
+              >
+                ♠ Pik
+              </Button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 };

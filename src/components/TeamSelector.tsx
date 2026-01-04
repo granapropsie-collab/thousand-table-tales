@@ -4,12 +4,19 @@ import { Input } from '@/components/ui/input';
 import { PlayerAvatar } from './PlayerAvatar';
 import { cn } from '@/lib/utils';
 import { useState } from 'react';
-import { Player } from '@/types/game';
+
+interface TeamPlayer {
+  id: string;
+  nickname: string;
+  team: 'A' | 'B' | null;
+  isReady: boolean;
+  isHost: boolean;
+}
 
 interface TeamSelectorProps {
   teamId: 'A' | 'B';
   teamName: string;
-  players: Player[];
+  players: TeamPlayer[];
   currentPlayerId: string;
   isEditable: boolean;
   onJoinTeam: (teamId: 'A' | 'B') => void;
