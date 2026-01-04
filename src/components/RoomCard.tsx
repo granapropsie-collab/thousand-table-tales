@@ -7,7 +7,7 @@ interface RoomCardProps {
   name: string;
   playerCount: number;
   maxPlayers: number;
-  status: 'waiting' | 'playing';
+  status: 'waiting' | 'playing' | 'finished';
   onJoin: (roomId: string) => void;
 }
 

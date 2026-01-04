@@ -14,7 +14,213 @@ export type Database = {
   }
   public: {
     Tables: {
-      [_ in never]: never
+      current_trick: {
+        Row: {
+          card: Json
+          id: string
+          played_at: string
+          player_id: string
+          position: number
+          room_id: string
+        }
+        Insert: {
+          card: Json
+          id?: string
+          played_at?: string
+          player_id: string
+          position: number
+          room_id: string
+        }
+        Update: {
+          card?: Json
+          id?: string
+          played_at?: string
+          player_id?: string
+          position?: number
+          room_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "current_trick_room_id_fkey"
+            columns: ["room_id"]
+            isOneToOne: false
+            referencedRelation: "rooms"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      last_winners: {
+        Row: {
+          id: string
+          rounds: number
+          score: string
+          team_name: string
+          won_at: string
+        }
+        Insert: {
+          id?: string
+          rounds?: number
+          score: string
+          team_name: string
+          won_at?: string
+        }
+        Update: {
+          id?: string
+          rounds?: number
+          score?: string
+          team_name?: string
+          won_at?: string
+        }
+        Relationships: []
+      }
+      musik: {
+        Row: {
+          cards: Json
+          id: string
+          revealed: boolean
+          room_id: string
+        }
+        Insert: {
+          cards?: Json
+          id?: string
+          revealed?: boolean
+          room_id: string
+        }
+        Update: {
+          cards?: Json
+          id?: string
+          revealed?: boolean
+          room_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "musik_room_id_fkey"
+            columns: ["room_id"]
+            isOneToOne: false
+            referencedRelation: "rooms"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      room_players: {
+        Row: {
+          cards: Json
+          id: string
+          is_host: boolean
+          is_ready: boolean
+          joined_at: string
+          melds: Json
+          nickname: string
+          player_id: string
+          position: number | null
+          room_id: string
+          round_score: number
+          team: string | null
+          tricks_won: Json
+        }
+        Insert: {
+          cards?: Json
+          id?: string
+          is_host?: boolean
+          is_ready?: boolean
+          joined_at?: string
+          melds?: Json
+          nickname: string
+          player_id: string
+          position?: number | null
+          room_id: string
+          round_score?: number
+          team?: string | null
+          tricks_won?: Json
+        }
+        Update: {
+          cards?: Json
+          id?: string
+          is_host?: boolean
+          is_ready?: boolean
+          joined_at?: string
+          melds?: Json
+          nickname?: string
+          player_id?: string
+          position?: number | null
+          room_id?: string
+          round_score?: number
+          team?: string | null
+          tricks_won?: Json
+        }
+        Relationships: [
+          {
+            foreignKeyName: "room_players_room_id_fkey"
+            columns: ["room_id"]
+            isOneToOne: false
+            referencedRelation: "rooms"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      rooms: {
+        Row: {
+          bid_winner_id: string | null
+          code: string
+          created_at: string
+          current_bid: number | null
+          current_player_id: string | null
+          current_trump: string | null
+          host_id: string | null
+          id: string
+          name: string
+          phase: string
+          round_number: number
+          status: string
+          team_a_name: string
+          team_a_score: number
+          team_b_name: string
+          team_b_score: number
+          updated_at: string
+          with_musik: boolean
+        }
+        Insert: {
+          bid_winner_id?: string | null
+          code?: string
+          created_at?: string
+          current_bid?: number | null
+          current_player_id?: string | null
+          current_trump?: string | null
+          host_id?: string | null
+          id?: string
+          name: string
+          phase?: string
+          round_number?: number
+          status?: string
+          team_a_name?: string
+          team_a_score?: number
+          team_b_name?: string
+          team_b_score?: number
+          updated_at?: string
+          with_musik?: boolean
+        }
+        Update: {
+          bid_winner_id?: string | null
+          code?: string
+          created_at?: string
+          current_bid?: number | null
+          current_player_id?: string | null
+          current_trump?: string | null
+          host_id?: string | null
+          id?: string
+          name?: string
+          phase?: string
+          round_number?: number
+          status?: string
+          team_a_name?: string
+          team_a_score?: number
+          team_b_name?: string
+          team_b_score?: number
+          updated_at?: string
+          with_musik?: boolean
+        }
+        Relationships: []
+      }
     }
     Views: {
       [_ in never]: never

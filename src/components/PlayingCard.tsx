@@ -1,5 +1,6 @@
-import { Card, Suit } from '@/types/game';
+import { Card } from '@/hooks/useGameState';
 import { cn } from '@/lib/utils';
+import cardBackImage from '@/assets/card-back.png';
 
 interface PlayingCardProps {
   card?: Card;
@@ -8,27 +9,29 @@ interface PlayingCardProps {
   onClick?: () => void;
   isPlayable?: boolean;
   isSelected?: boolean;
+  isAnimating?: boolean;
+  animationDelay?: number;
   className?: string;
 }
 
-const suitSymbols: Record<Suit, string> = {
+const suitSymbols = {
   hearts: '♥',
   diamonds: '♦',
   clubs: '♣',
   spades: '♠',
 };
 
-const suitColors: Record<Suit, string> = {
-  hearts: 'text-red-500',
-  diamonds: 'text-red-500',
+const suitColors = {
+  hearts: 'text-red-600',
+  diamonds: 'text-red-600',
   clubs: 'text-gray-900',
   spades: 'text-gray-900',
 };
 
 const sizeClasses = {
-  sm: 'w-12 h-16 text-xs',
-  md: 'w-16 h-22 text-sm',
-  lg: 'w-20 h-28 text-base',
+  sm: 'w-12 h-[72px] text-xs',
+  md: 'w-16 h-24 text-sm',
+  lg: 'w-20 h-[120px] text-base',
 };
 
 export const PlayingCard = ({
@@ -38,24 +41,29 @@ export const PlayingCard = ({
   onClick,
   isPlayable = false,
   isSelected = false,
+  isAnimating = false,
+  animationDelay = 0,
   className,
 }: PlayingCardProps) => {
-  if (faceDown || !card) {
+  const isHidden = faceDown || !card || card.hidden;
+
+  if (isHidden) {
     return (
       <div
         className={cn(
           sizeClasses[size],
-          'rounded-lg bg-gradient-to-br from-wood-medium via-wood-dark to-wood-medium',
-          'border-2 border-gold/30 card-shadow',
-          'flex items-center justify-center',
-          'relative overflow-hidden',
+          'rounded-lg overflow-hidden card-shadow',
+          'relative transition-all duration-300',
+          isAnimating && 'animate-[deal_0.5s_ease-out_forwards]',
           className
         )}
+        style={{ animationDelay: `${animationDelay}ms` }}
       >
-        {/* Card back pattern */}
-        <div className="absolute inset-2 rounded border border-gold/20 bg-gradient-to-br from-gold/10 to-transparent" />
-        <div className="absolute inset-3 rounded border border-gold/10" />
-        <span className="text-gold/40 font-display text-2xl">♠</span>
+        <img 
+          src={cardBackImage} 
+          alt="Card back" 
+          className="w-full h-full object-cover"
+        />
       </div>
     );
   }
@@ -69,25 +77,27 @@ export const PlayingCard = ({
         'border-2 card-shadow',
         'flex flex-col items-center justify-between p-1.5',
         'transition-all duration-200',
-        isPlayable && 'cursor-pointer hover:-translate-y-2 hover:shadow-xl',
-        isSelected && 'ring-2 ring-gold -translate-y-3',
+        isPlayable && 'cursor-pointer hover:-translate-y-3 hover:shadow-xl hover:z-10',
+        isSelected && 'ring-2 ring-gold -translate-y-4 shadow-xl z-10',
         !isPlayable && !isSelected && 'border-cream-dark/50',
         isPlayable && 'border-gold/50 glow-gold',
+        isAnimating && 'animate-[deal_0.5s_ease-out_forwards]',
         className
       )}
+      style={{ animationDelay: `${animationDelay}ms` }}
     >
-      <div className={cn('font-bold self-start', suitColors[card.suit])}>
-        <div className="leading-none">{card.rank}</div>
-        <div className="text-lg leading-none">{suitSymbols[card.suit]}</div>
+      <div className={cn('font-bold self-start leading-none', suitColors[card.suit])}>
+        <div>{card.rank}</div>
+        <div className="text-lg">{suitSymbols[card.suit]}</div>
       </div>
       
       <div className={cn('text-3xl', suitColors[card.suit])}>
         {suitSymbols[card.suit]}
       </div>
       
-      <div className={cn('font-bold self-end rotate-180', suitColors[card.suit])}>
-        <div className="leading-none">{card.rank}</div>
-        <div className="text-lg leading-none">{suitSymbols[card.suit]}</div>
+      <div className={cn('font-bold self-end rotate-180 leading-none', suitColors[card.suit])}>
+        <div>{card.rank}</div>
+        <div className="text-lg">{suitSymbols[card.suit]}</div>
       </div>
     </div>
   );

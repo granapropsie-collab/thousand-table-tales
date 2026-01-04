@@ -4,36 +4,34 @@ import { Spade, Users, Plus } from 'lucide-react';
 import { LastWinner } from '@/components/LastWinner';
 import { RoomCard } from '@/components/RoomCard';
 import { CreateRoomForm } from '@/components/CreateRoomForm';
-import { toast } from 'sonner';
-
-// Mock data for demonstration
-const mockLastWinner = {
-  teamName: 'Asy Kier',
-  score: '1000 : 820',
-  date: '3 stycznia 2026',
-  rounds: 12,
-};
-
-const mockRooms = [
-  { id: '1', name: 'Saloon Kowbojów', playerCount: 2, maxPlayers: 4, status: 'waiting' as const },
-  { id: '2', name: 'Poker Night', playerCount: 4, maxPlayers: 4, status: 'playing' as const },
-  { id: '3', name: 'Partyjka u Staszka', playerCount: 1, maxPlayers: 4, status: 'waiting' as const },
-];
+import { useRoomsList, useGameState } from '@/hooks/useGameState';
 
 const Index = () => {
   const navigate = useNavigate();
-  const [rooms] = useState(mockRooms);
+  const { rooms, lastWinner } = useRoomsList();
+  const { createRoom, joinRoom, playerId } = useGameState();
+  const [nickname, setNickname] = useState(() => 
+    localStorage.getItem('tysiac_nickname') || ''
+  );
 
-  const handleJoinRoom = (roomId: string) => {
-    toast.success('Dołączanie do pokoju...');
+  const handleJoinRoom = async (roomId: string) => {
+    const name = nickname || prompt('Podaj swój nick:');
+    if (!name) return;
+    
+    localStorage.setItem('tysiac_nickname', name);
+    await joinRoom(roomId, name);
     navigate(`/room/${roomId}`);
   };
 
-  const handleCreateRoom = (data: { roomName: string; nickname: string; withMusik: boolean }) => {
-    toast.success(`Pokój "${data.roomName}" został utworzony!`);
-    // In real app, this would create a room via WebSocket and get roomId
-    navigate('/room/new');
+  const handleCreateRoom = async (data: { roomName: string; nickname: string; withMusik: boolean }) => {
+    localStorage.setItem('tysiac_nickname', data.nickname);
+    const room = await createRoom(data.roomName, data.nickname, data.withMusik);
+    if (room) {
+      navigate(`/room/${room.id}`);
+    }
   };
+
+  const waitingRooms = rooms.filter(r => r.status === 'waiting');
 
   return (
     <div className="min-h-screen wood-texture">
@@ -48,7 +46,7 @@ const Index = () => {
             <Spade className="w-10 h-10 text-gold rotate-180" />
           </div>
           <p className="text-center text-muted-foreground mt-2">
-            Klasyczna polska gra karciana
+            Klasyczna polska gra karciana • Multiplayer online
           </p>
         </div>
       </header>
@@ -56,7 +54,20 @@ const Index = () => {
       <main className="container mx-auto px-4 py-8 space-y-10">
         {/* Last Winner Section */}
         <section className="animate-fade-in" style={{ animationDelay: '0.1s' }}>
-          <LastWinner {...mockLastWinner} />
+          {lastWinner ? (
+            <LastWinner 
+              teamName={lastWinner.team_name}
+              score={lastWinner.score}
+              date={new Date(lastWinner.won_at).toLocaleDateString('pl-PL')}
+              rounds={lastWinner.rounds}
+            />
+          ) : (
+            <div className="rounded-xl bg-card border border-border p-8 text-center">
+              <p className="text-muted-foreground">
+                🏆 Brak zwycięzców - bądź pierwszy!
+              </p>
+            </div>
+          )}
         </section>
 
         <div className="grid lg:grid-cols-2 gap-8">
@@ -65,18 +76,23 @@ const Index = () => {
             <div className="flex items-center gap-3 mb-4">
               <Users className="w-6 h-6 text-gold" />
               <h2 className="text-2xl font-display text-cream">Aktywne Pokoje</h2>
+              <span className="text-muted-foreground text-sm">({waitingRooms.length})</span>
             </div>
             
-            <div className="space-y-3">
-              {rooms.filter(r => r.status === 'waiting' || r.playerCount > 0).map((room) => (
+            <div className="space-y-3 max-h-96 overflow-y-auto">
+              {waitingRooms.map((room) => (
                 <RoomCard
                   key={room.id}
-                  {...room}
+                  id={room.id}
+                  name={room.name}
+                  playerCount={room.room_players?.length || 0}
+                  maxPlayers={4}
+                  status={room.status}
                   onJoin={handleJoinRoom}
                 />
               ))}
               
-              {rooms.length === 0 && (
+              {waitingRooms.length === 0 && (
                 <div className="rounded-xl bg-card/50 border border-border p-8 text-center">
                   <Users className="w-12 h-12 text-muted-foreground mx-auto mb-3 opacity-50" />
                   <p className="text-muted-foreground">
