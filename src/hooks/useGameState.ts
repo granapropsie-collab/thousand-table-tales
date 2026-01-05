@@ -30,6 +30,8 @@ export interface Room {
   code: string;
   host_id: string;
   with_musik: boolean;
+  max_players: 2 | 3 | 4;
+  game_mode: 'ffa' | 'teams';
   status: 'waiting' | 'playing' | 'finished';
   team_a_name: string;
   team_b_name: string;
@@ -100,10 +102,16 @@ export const useGameState = (roomId?: string) => {
   }, [roomId, callGameServer]);
 
   // Create room
-  const createRoom = useCallback(async (name: string, nickname: string, withMusik: boolean) => {
+  const createRoom = useCallback(async (
+    name: string, 
+    nickname: string, 
+    withMusik: boolean,
+    maxPlayers: 2 | 3 | 4 = 4,
+    gameMode: 'ffa' | 'teams' = 'ffa'
+  ) => {
     setLoading(true);
     try {
-      const result = await callGameServer('create_room', { name, nickname, withMusik });
+      const result = await callGameServer('create_room', { name, nickname, withMusik, maxPlayers, gameMode });
       toast.success('Pokój utworzony!');
       return result.room;
     } finally {

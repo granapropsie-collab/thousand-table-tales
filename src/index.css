@@ -84,11 +84,18 @@
 @layer base {
   * {
     @apply border-border;
+    -webkit-tap-highlight-color: transparent;
+  }
+
+  html {
+    touch-action: manipulation;
   }
 
   body {
     @apply bg-background text-foreground font-serif;
     font-family: 'Crimson Text', serif;
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
   }
 
   h1, h2, h3, h4, h5, h6 {
@@ -149,6 +156,21 @@
   .vignette {
     box-shadow: inset 0 0 150px rgba(0, 0, 0, 0.6);
   }
+
+  /* Touch-friendly button sizing */
+  .touch-target {
+    min-height: 44px;
+    min-width: 44px;
+  }
+
+  /* Safe area padding for mobile */
+  .safe-area-bottom {
+    padding-bottom: env(safe-area-inset-bottom, 0);
+  }
+
+  .safe-area-top {
+    padding-top: env(safe-area-inset-top, 0);
+  }
 }
 
 @layer utilities {
@@ -158,6 +180,14 @@
 
   .text-shadow-gold {
     text-shadow: 0 0 10px rgba(200, 155, 60, 0.5);
+  }
+
+  /* Prevent text selection on game elements */
+  .no-select {
+    -webkit-user-select: none;
+    -moz-user-select: none;
+    -ms-user-select: none;
+    user-select: none;
   }
 }
 
@@ -217,6 +247,11 @@
   }
 }
 
+@keyframes bounce-subtle {
+  0%, 100% { transform: translateY(0); }
+  50% { transform: translateY(-5px); }
+}
+
 .animate-card-hover:hover {
   animation: cardHover 0.2s ease-out forwards;
 }
@@ -234,4 +269,47 @@
 
 .animate-pulse-glow {
   animation: pulse-glow 2s ease-in-out infinite;
+}
+
+.animate-bounce-subtle {
+  animation: bounce-subtle 1s ease-in-out infinite;
+}
+
+/* Mobile-specific styles */
+@media (max-width: 640px) {
+  .mobile-card-sm {
+    width: 48px !important;
+    height: 72px !important;
+    font-size: 10px !important;
+  }
+
+  .mobile-card-md {
+    width: 56px !important;
+    height: 84px !important;
+    font-size: 11px !important;
+  }
+
+  /* Better tap targets on mobile */
+  button, 
+  [role="button"],
+  input,
+  select,
+  textarea {
+    min-height: 44px;
+  }
+}
+
+/* Landscape mode adjustments */
+@media (max-height: 500px) and (orientation: landscape) {
+  .landscape-compact {
+    padding-top: 0.5rem !important;
+    padding-bottom: 0.5rem !important;
+  }
+}
+
+/* Scrollbar styling for touch devices */
+@supports (-webkit-touch-callout: none) {
+  ::-webkit-scrollbar {
+    display: none;
+  }
 }

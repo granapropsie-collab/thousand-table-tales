@@ -23,9 +23,15 @@ const Index = () => {
     navigate(`/room/${roomId}`);
   };
 
-  const handleCreateRoom = async (data: { roomName: string; nickname: string; withMusik: boolean }) => {
+  const handleCreateRoom = async (data: { 
+    roomName: string; 
+    nickname: string; 
+    withMusik: boolean;
+    maxPlayers: 2 | 3 | 4;
+    gameMode: 'ffa' | 'teams';
+  }) => {
     localStorage.setItem('tysiac_nickname', data.nickname);
-    const room = await createRoom(data.roomName, data.nickname, data.withMusik);
+    const room = await createRoom(data.roomName, data.nickname, data.withMusik, data.maxPlayers, data.gameMode);
     if (room) {
       navigate(`/room/${room.id}`);
     }
