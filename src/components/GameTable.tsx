@@ -29,6 +29,7 @@ export const GameTable = ({
   isMyTurn,
 }: GameTableProps) => {
   const players = room.room_players;
+  const playerCount = players.length;
   
   // Order players: current player at bottom, then clockwise
   const currentPlayerIndex = players.findIndex((p) => p.player_id === playerId);
@@ -37,12 +38,27 @@ export const GameTable = ({
     ...players.slice(0, currentPlayerIndex),
   ];
 
-  const [bottomPlayer, rightPlayer, topPlayer, leftPlayer] = orderedPlayers;
+  // Get positions based on player count
+  const getPlayerPositions = () => {
+    switch (playerCount) {
+      case 2:
+        return ['bottom', 'top'];
+      case 3:
+        return ['bottom', 'left', 'right'];
+      case 4:
+      default:
+        return ['bottom', 'right', 'top', 'left'];
+    }
+  };
+
+  const positions = getPlayerPositions();
+
   const currentPlayer = players.find((p) => p.player_id === playerId);
   const playerTeam = currentPlayer?.team;
+  const isTeamMode = room.game_mode === 'teams';
 
   const isPartner = (player: RoomPlayer) => {
-    return playerTeam && player.team === playerTeam && player.player_id !== playerId;
+    return isTeamMode && playerTeam && player.team === playerTeam && player.player_id !== playerId;
   };
 
   const getPlayerTrickCard = (player: RoomPlayer) => {
@@ -56,17 +72,37 @@ export const GameTable = ({
     if (!isMyTurn || room.phase !== 'playing') return false;
     if (!leadSuit) return true; // First card in trick
     
-    const myCards = bottomPlayer?.cards.filter(c => !c.hidden) || [];
+    const myCards = orderedPlayers[0]?.cards.filter(c => !c.hidden) || [];
     const hasSuit = myCards.some((c) => c.suit === leadSuit);
     if (hasSuit) return card.suit === leadSuit;
     return true;
   };
 
+  // Position classes for different layouts
+  const positionStyles: Record<string, Record<string, string>> = {
+    bottom: {
+      container: 'absolute bottom-2 sm:bottom-4 left-1/2 -translate-x-1/2',
+      cards: 'flex gap-0.5 sm:gap-1 -space-x-2 sm:-space-x-4',
+    },
+    top: {
+      container: 'absolute top-12 sm:top-16 left-1/2 -translate-x-1/2',
+      cards: 'flex -space-x-6 sm:-space-x-8',
+    },
+    left: {
+      container: 'absolute left-2 sm:left-8 top-1/2 -translate-y-1/2',
+      cards: 'flex flex-col -space-y-8 sm:-space-y-10',
+    },
+    right: {
+      container: 'absolute right-2 sm:right-8 top-1/2 -translate-y-1/2',
+      cards: 'flex flex-col -space-y-8 sm:-space-y-10',
+    },
+  };
+
   return (
-    <div className="relative w-full max-w-4xl mx-auto aspect-[4/3]">
+    <div className="relative w-full max-w-4xl mx-auto aspect-[4/3] sm:aspect-[4/3] no-select">
       {/* Table */}
       <div 
-        className="absolute inset-0 rounded-[40%/50%] overflow-hidden shadow-2xl border-8 border-wood-dark"
+        className="absolute inset-0 rounded-[30%/40%] sm:rounded-[40%/50%] overflow-hidden shadow-2xl border-4 sm:border-8 border-wood-dark"
         style={{ 
           backgroundImage: `url(${tableFeltImage})`,
           backgroundSize: 'cover',
@@ -76,16 +112,16 @@ export const GameTable = ({
         {/* Vignette overlay */}
         <div className="absolute inset-0 vignette" />
         {/* Wood border effect */}
-        <div className="absolute inset-0 rounded-[40%/50%] border-4 border-wood-light/20" />
+        <div className="absolute inset-0 rounded-[30%/40%] sm:rounded-[40%/50%] border-2 sm:border-4 border-wood-light/20" />
       </div>
 
       {/* Center - Current Trick */}
-      <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 flex gap-2">
+      <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 flex gap-1 sm:gap-2">
         {currentTrick.map((trick, index) => (
           <PlayingCard
             key={trick.id}
             card={trick.card}
-            size="md"
+            size="sm"
             className={cn(
               'animate-scale-in',
               index === 0 && '-rotate-6',
@@ -96,19 +132,19 @@ export const GameTable = ({
           />
         ))}
         {currentTrick.length === 0 && room.phase === 'playing' && (
-          <div className="w-16 h-24 rounded-lg border-2 border-dashed border-cream/20 flex items-center justify-center">
-            <span className="text-cream/30 text-sm text-center">Zagraj kartę</span>
+          <div className="w-12 h-[72px] sm:w-16 sm:h-24 rounded-lg border-2 border-dashed border-cream/20 flex items-center justify-center">
+            <span className="text-cream/30 text-[10px] sm:text-sm text-center px-1">Zagraj kartę</span>
           </div>
         )}
       </div>
 
       {/* Trump indicator */}
       {room.current_trump && (
-        <div className="absolute top-4 left-1/2 -translate-x-1/2 bg-card/90 backdrop-blur px-4 py-2 rounded-lg border border-gold/30 animate-fade-in">
-          <span className="text-muted-foreground text-sm mr-2">Atut:</span>
+        <div className="absolute top-2 sm:top-4 left-1/2 -translate-x-1/2 bg-card/90 backdrop-blur px-2 sm:px-4 py-1 sm:py-2 rounded-lg border border-gold/30 animate-fade-in z-20">
+          <span className="text-muted-foreground text-xs sm:text-sm mr-1 sm:mr-2">Atut:</span>
           <span
             className={cn(
-              'text-2xl',
+              'text-lg sm:text-2xl',
               room.current_trump === 'hearts' || room.current_trump === 'diamonds' 
                 ? 'text-red-500' 
                 : 'text-cream'
@@ -121,142 +157,146 @@ export const GameTable = ({
 
       {/* Phase indicator */}
       {room.phase === 'bidding' && (
-        <div className="absolute top-4 left-1/2 -translate-x-1/2 bg-gold/90 text-primary-foreground px-4 py-2 rounded-lg animate-pulse-glow">
-          <span className="font-display">Licytacja: {room.current_bid}</span>
+        <div className="absolute top-2 sm:top-4 left-1/2 -translate-x-1/2 bg-gold/90 text-primary-foreground px-3 sm:px-4 py-1 sm:py-2 rounded-lg animate-pulse-glow z-20">
+          <span className="font-display text-sm sm:text-base">Licytacja: {room.current_bid}</span>
         </div>
       )}
 
-      {/* Score Panel */}
-      <div className="absolute top-4 right-4 bg-card/90 backdrop-blur px-4 py-3 rounded-lg border border-border space-y-1">
-        <div className="flex items-center gap-3">
-          <span className="w-3 h-3 rounded-full bg-team-a" />
-          <span className="text-cream text-sm font-medium truncate max-w-20">{room.team_a_name}:</span>
-          <span className="text-gold font-display">{room.team_a_score}</span>
-        </div>
-        <div className="flex items-center gap-3">
-          <span className="w-3 h-3 rounded-full bg-team-b" />
-          <span className="text-cream text-sm font-medium truncate max-w-20">{room.team_b_name}:</span>
-          <span className="text-gold font-display">{room.team_b_score}</span>
-        </div>
+      {/* Score Panel - Different layout for FFA vs Teams */}
+      <div className="absolute top-2 sm:top-4 right-2 sm:right-4 bg-card/90 backdrop-blur px-2 sm:px-4 py-2 sm:py-3 rounded-lg border border-border space-y-1 z-10 max-w-[120px] sm:max-w-none">
+        {isTeamMode ? (
+          <>
+            <div className="flex items-center gap-2 sm:gap-3">
+              <span className="w-2 h-2 sm:w-3 sm:h-3 rounded-full bg-team-a flex-shrink-0" />
+              <span className="text-cream text-xs sm:text-sm font-medium truncate">{room.team_a_name}:</span>
+              <span className="text-gold font-display text-sm sm:text-base">{room.team_a_score}</span>
+            </div>
+            <div className="flex items-center gap-2 sm:gap-3">
+              <span className="w-2 h-2 sm:w-3 sm:h-3 rounded-full bg-team-b flex-shrink-0" />
+              <span className="text-cream text-xs sm:text-sm font-medium truncate">{room.team_b_name}:</span>
+              <span className="text-gold font-display text-sm sm:text-base">{room.team_b_score}</span>
+            </div>
+          </>
+        ) : (
+          <>
+            {orderedPlayers.slice(0, 4).map((player, i) => (
+              <div key={player.id} className="flex items-center gap-1 sm:gap-2">
+                <span className="text-cream text-[10px] sm:text-xs truncate max-w-12 sm:max-w-20">{player.nickname}</span>
+                <span className="text-gold font-display text-xs sm:text-sm ml-auto">{player.round_score}</span>
+              </div>
+            ))}
+          </>
+        )}
       </div>
 
-      {/* Bottom Player (Current User) */}
-      <div className="absolute bottom-4 left-1/2 -translate-x-1/2 flex flex-col items-center gap-2">
-        <div className="flex gap-1 -space-x-4">
-          {bottomPlayer?.cards
-            .filter(c => !c.hidden)
-            .map((card, i) => (
-              <PlayingCard
-                key={card.id}
-                card={card}
-                size="lg"
-                isPlayable={canPlayCard(card)}
-                onClick={() => canPlayCard(card) && onPlayCard(card.id)}
-                isAnimating
-                animationDelay={i * 100}
-              />
-            ))}
-        </div>
-        <PlayerAvatar
-          nickname={bottomPlayer?.nickname || 'Ty'}
-          hatType={hatTypes[0]}
-          team={bottomPlayer?.team}
-          isCurrentTurn={room.current_player_id === bottomPlayer?.player_id}
-          size="sm"
-        />
-      </div>
+      {/* Players around the table */}
+      {orderedPlayers.map((player, index) => {
+        const position = positions[index];
+        if (!position) return null;
+        
+        const isCurrentTurn = room.current_player_id === player.player_id;
+        const isMe = player.player_id === playerId;
+        const styles = positionStyles[position];
 
-      {/* Right Player */}
-      {rightPlayer && (
-        <div className="absolute right-8 top-1/2 -translate-y-1/2 flex items-center gap-2">
-          <PlayerAvatar
-            nickname={rightPlayer.nickname}
-            hatType={hatTypes[1]}
-            team={rightPlayer.team}
-            isCurrentTurn={room.current_player_id === rightPlayer.player_id}
-            isPartner={isPartner(rightPlayer)}
-            size="sm"
-          />
-          <div className="flex flex-col -space-y-10">
-            {rightPlayer.cards.map((card, i) => (
-              <PlayingCard
-                key={card.id}
-                card={isPartner(rightPlayer) && !card.hidden ? card : undefined}
-                faceDown={!isPartner(rightPlayer) || card.hidden}
-                size="sm"
-                className="opacity-90"
-                isAnimating
-                animationDelay={i * 50}
-              />
-            ))}
-          </div>
-        </div>
-      )}
+        if (isMe) {
+          // Current player's hand at bottom
+          return (
+            <div key={player.id} className={cn(styles.container, 'z-20')}>
+              <div className="flex flex-col items-center gap-1 sm:gap-2">
+                <div className={styles.cards}>
+                  {player.cards
+                    .filter(c => !c.hidden)
+                    .map((card, i) => (
+                      <PlayingCard
+                        key={card.id}
+                        card={card}
+                        size={window.innerWidth < 640 ? 'sm' : 'lg'}
+                        isPlayable={canPlayCard(card)}
+                        onClick={() => canPlayCard(card) && onPlayCard(card.id)}
+                        isAnimating
+                        animationDelay={i * 100}
+                        className={cn(
+                          'transition-transform active:scale-95',
+                          window.innerWidth < 640 && 'mobile-card-md'
+                        )}
+                      />
+                    ))}
+                </div>
+                <PlayerAvatar
+                  nickname={player.nickname}
+                  hatType={hatTypes[0]}
+                  team={isTeamMode ? player.team : null}
+                  isCurrentTurn={isCurrentTurn}
+                  size="sm"
+                />
+              </div>
+            </div>
+          );
+        }
 
-      {/* Top Player */}
-      {topPlayer && (
-        <div className="absolute top-16 left-1/2 -translate-x-1/2 flex flex-col items-center gap-2">
-          <PlayerAvatar
-            nickname={topPlayer.nickname}
-            hatType={hatTypes[2]}
-            team={topPlayer.team}
-            isCurrentTurn={room.current_player_id === topPlayer.player_id}
-            isPartner={isPartner(topPlayer)}
-            size="sm"
-          />
-          <div className="flex -space-x-8">
-            {topPlayer.cards.map((card, i) => (
-              <PlayingCard
-                key={card.id}
-                card={isPartner(topPlayer) && !card.hidden ? card : undefined}
-                faceDown={!isPartner(topPlayer) || card.hidden}
+        // Other players
+        const isHorizontal = position === 'top' || position === 'bottom';
+        
+        return (
+          <div key={player.id} className={cn(styles.container, 'z-10')}>
+            <div className={cn(
+              'flex items-center gap-1 sm:gap-2',
+              isHorizontal ? 'flex-col' : position === 'left' ? 'flex-row' : 'flex-row-reverse'
+            )}>
+              <PlayerAvatar
+                nickname={player.nickname}
+                hatType={hatTypes[index % 4]}
+                team={isTeamMode ? player.team : null}
+                isCurrentTurn={isCurrentTurn}
+                isPartner={isPartner(player)}
                 size="sm"
-                className="opacity-90"
-                isAnimating
-                animationDelay={i * 50}
               />
-            ))}
+              <div className={cn(
+                styles.cards,
+                !isHorizontal && 'max-h-32 sm:max-h-48'
+              )}>
+                {player.cards.slice(0, Math.min(player.cards.length, 5)).map((card, i) => (
+                  <PlayingCard
+                    key={card.id}
+                    card={isPartner(player) && !card.hidden ? card : undefined}
+                    faceDown={!isPartner(player) || card.hidden}
+                    size="sm"
+                    className={cn(
+                      'opacity-90',
+                      window.innerWidth < 640 && 'mobile-card-sm'
+                    )}
+                    isAnimating
+                    animationDelay={i * 50}
+                  />
+                ))}
+                {player.cards.length > 5 && (
+                  <div className="flex items-center justify-center bg-card/60 rounded px-1 text-[10px] sm:text-xs text-cream/70">
+                    +{player.cards.length - 5}
+                  </div>
+                )}
+              </div>
+            </div>
           </div>
-        </div>
-      )}
-
-      {/* Left Player */}
-      {leftPlayer && (
-        <div className="absolute left-8 top-1/2 -translate-y-1/2 flex items-center gap-2">
-          <div className="flex flex-col -space-y-10">
-            {leftPlayer.cards.map((card, i) => (
-              <PlayingCard
-                key={card.id}
-                card={isPartner(leftPlayer) && !card.hidden ? card : undefined}
-                faceDown={!isPartner(leftPlayer) || card.hidden}
-                size="sm"
-                className="opacity-90"
-                isAnimating
-                animationDelay={i * 50}
-              />
-            ))}
-          </div>
-          <PlayerAvatar
-            nickname={leftPlayer.nickname}
-            hatType={hatTypes[3]}
-            team={leftPlayer.team}
-            isCurrentTurn={room.current_player_id === leftPlayer.player_id}
-            isPartner={isPartner(leftPlayer)}
-            size="sm"
-          />
-        </div>
-      )}
+        );
+      })}
 
       {/* Melds indicator */}
       {currentPlayer?.melds && currentPlayer.melds.length > 0 && (
-        <div className="absolute bottom-4 left-4 bg-card/90 backdrop-blur px-4 py-2 rounded-lg border border-gold/30">
-          <span className="text-muted-foreground text-sm mr-2">Meldunki:</span>
+        <div className="absolute bottom-2 sm:bottom-4 left-2 sm:left-4 bg-card/90 backdrop-blur px-2 sm:px-4 py-1 sm:py-2 rounded-lg border border-gold/30 z-10">
+          <span className="text-muted-foreground text-[10px] sm:text-sm mr-1 sm:mr-2">Meldunki:</span>
           {currentPlayer.melds.map((meld, i) => (
-            <span key={i} className="text-gold">
+            <span key={i} className="text-gold text-xs sm:text-sm">
               👑👸 {meld.suit === 'hearts' ? 'Kier' : meld.suit === 'diamonds' ? 'Karo' : meld.suit === 'clubs' ? 'Trefl' : 'Pik'} ({meld.points})
               {i < currentPlayer.melds.length - 1 && ', '}
             </span>
           ))}
+        </div>
+      )}
+
+      {/* Turn indicator for mobile */}
+      {isMyTurn && room.phase === 'playing' && (
+        <div className="absolute bottom-24 sm:bottom-36 left-1/2 -translate-x-1/2 bg-status-active/90 text-cream px-3 py-1 rounded-full text-xs sm:text-sm font-medium animate-bounce-subtle z-20">
+          Twój ruch!
         </div>
       )}
     </div>
