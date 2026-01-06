@@ -39,25 +39,42 @@ function shuffleDeck(deck: Card[]): Card[] {
   return shuffled;
 }
 
-// Deal cards
-function dealCards(withMusik: boolean): { hands: Card[][]; musik: Card[] } {
+// Deal cards for 2, 3, or 4 players
+function dealCards(playerCount: number, withMusik: boolean): { hands: Card[][]; musik: Card[] } {
   const deck = shuffleDeck(createDeck());
-  const hands: Card[][] = [[], [], [], []];
+  const hands: Card[][] = Array.from({ length: playerCount }, () => []);
   let musik: Card[] = [];
 
-  if (withMusik) {
-    // 5 cards each + 4 musik
-    for (let i = 0; i < 5; i++) {
-      for (let p = 0; p < 4; p++) {
-        hands[p].push(deck[i * 4 + p]);
+  if (playerCount === 4) {
+    if (withMusik) {
+      // 5 cards each + 4 musik
+      for (let i = 0; i < 5; i++) {
+        for (let p = 0; p < 4; p++) {
+          hands[p].push(deck[i * 4 + p]);
+        }
+      }
+      musik = deck.slice(20, 24);
+    } else {
+      // 6 cards each, no musik
+      for (let i = 0; i < 6; i++) {
+        for (let p = 0; p < 4; p++) {
+          hands[p].push(deck[i * 4 + p]);
+        }
       }
     }
-    musik = deck.slice(20, 24);
-  } else {
-    // 6 cards each, no musik
-    for (let i = 0; i < 6; i++) {
-      for (let p = 0; p < 4; p++) {
-        hands[p].push(deck[i * 4 + p]);
+  } else if (playerCount === 3) {
+    // 3 players: 8 cards each (24 total)
+    for (let i = 0; i < 8; i++) {
+      for (let p = 0; p < 3; p++) {
+        hands[p].push(deck[i * 3 + p]);
+      }
+    }
+    // Optional musik (remaining cards not used)
+  } else if (playerCount === 2) {
+    // 2 players: 12 cards each (24 total)
+    for (let i = 0; i < 12; i++) {
+      for (let p = 0; p < 2; p++) {
+        hands[p].push(deck[i * 2 + p]);
       }
     }
   }
@@ -87,7 +104,8 @@ function calculatePoints(cards: Card[]): number {
 function determineTrickWinner(
   trick: { playerId: string; card: Card; position: number }[],
   trump: string | null,
-  leadSuit: string
+  leadSuit: string,
+  playerCount: number
 ): string {
   let winner = trick[0];
   
@@ -162,15 +180,17 @@ serve(async (req) => {
     switch (action) {
       // CREATE ROOM
       case "create_room": {
-        const { name, nickname, withMusik, playerId } = data;
+        const { name, nickname, withMusik, playerId, maxPlayers = 4, gameMode = 'ffa' } = data;
         
-        // Create room
+        // Create room with maxPlayers and gameMode
         const { data: room, error: roomError } = await supabase
           .from("rooms")
           .insert({
             name,
             host_id: playerId,
             with_musik: withMusik,
+            max_players: maxPlayers,
+            game_mode: gameMode,
           })
           .select()
           .single();
@@ -190,7 +210,7 @@ serve(async (req) => {
 
         if (playerError) throw playerError;
 
-        console.log(`[GameServer] Room created: ${room.id}`);
+        console.log(`[GameServer] Room created: ${room.id} (${maxPlayers} players, ${gameMode})`);
         return new Response(JSON.stringify({ success: true, room }), {
           headers: { ...corsHeaders, "Content-Type": "application/json" },
         });
@@ -200,6 +220,15 @@ serve(async (req) => {
       case "join_room": {
         const { roomId, nickname, playerId } = data;
 
+        // Get room settings
+        const { data: room } = await supabase
+          .from("rooms")
+          .select("max_players")
+          .eq("id", roomId)
+          .single();
+
+        const maxPlayers = room?.max_players || 4;
+
         // Get current players
         const { data: players } = await supabase
           .from("room_players")
@@ -207,7 +236,8 @@ serve(async (req) => {
           .eq("room_id", roomId);
 
         const usedPositions = players?.map((p) => p.position) || [];
-        const nextPosition = [0, 1, 2, 3].find((p) => !usedPositions.includes(p));
+        const availablePositions = Array.from({ length: maxPlayers }, (_, i) => i).filter(p => !usedPositions.includes(p));
+        const nextPosition = availablePositions[0];
 
         if (nextPosition === undefined) {
           throw new Error("Room is full");
@@ -222,7 +252,7 @@ serve(async (req) => {
 
         if (error) throw error;
 
-        console.log(`[GameServer] Player ${playerId} joined room ${roomId}`);
+        console.log(`[GameServer] Player ${playerId} joined room ${roomId} at position ${nextPosition}`);
         return new Response(JSON.stringify({ success: true }), {
           headers: { ...corsHeaders, "Content-Type": "application/json" },
         });
@@ -292,14 +322,32 @@ serve(async (req) => {
           .single();
 
         if (!room) throw new Error("Room not found");
-        if (room.room_players.length !== 4) throw new Error("Need 4 players");
+        
+        const maxPlayers = room.max_players || 4;
+        const playerCount = room.room_players.length;
+        
+        // Validate player count based on room settings
+        if (playerCount < 2) throw new Error("Need at least 2 players");
+        if (playerCount > maxPlayers) throw new Error(`Too many players (max ${maxPlayers})`);
+        
+        // For FFA mode, we just need minimum 2 players up to maxPlayers
+        // For teams mode, we need exactly 4 players with 2 on each team
+        if (room.game_mode === 'teams') {
+          if (playerCount !== 4) throw new Error("Team mode requires exactly 4 players");
+          const teamA = room.room_players.filter((p: any) => p.team === 'A');
+          const teamB = room.room_players.filter((p: any) => p.team === 'B');
+          if (teamA.length !== 2 || teamB.length !== 2) {
+            throw new Error("Teams must have 2 players each");
+          }
+        }
 
-        // Deal cards
-        const { hands, musik } = dealCards(room.with_musik);
+        // Deal cards based on player count
+        const { hands, musik } = dealCards(playerCount, room.with_musik && playerCount === 4);
 
-        // Update players with cards
-        for (let i = 0; i < 4; i++) {
-          const player = room.room_players.find((p: any) => p.position === i);
+        // Update players with cards - order by position
+        const sortedPlayers = [...room.room_players].sort((a: any, b: any) => a.position - b.position);
+        for (let i = 0; i < playerCount; i++) {
+          const player = sortedPlayers[i];
           if (player) {
             await supabase
               .from("room_players")
@@ -309,7 +357,7 @@ serve(async (req) => {
         }
 
         // Store musik if using it
-        if (room.with_musik) {
+        if (room.with_musik && playerCount === 4 && musik.length > 0) {
           await supabase.from("musik").insert({
             room_id: roomId,
             cards: musik,
@@ -317,7 +365,7 @@ serve(async (req) => {
         }
 
         // Update room state
-        const firstPlayerId = room.room_players.find((p: any) => p.position === 0)?.player_id;
+        const firstPlayerId = sortedPlayers[0]?.player_id;
         await supabase
           .from("rooms")
           .update({
@@ -326,10 +374,12 @@ serve(async (req) => {
             round_number: 1,
             current_player_id: firstPlayerId,
             current_bid: 100,
+            current_trump: null,
+            bid_winner_id: null,
           })
           .eq("id", roomId);
 
-        console.log(`[GameServer] Game started in room ${roomId}`);
+        console.log(`[GameServer] Game started in room ${roomId} with ${playerCount} players`);
         return new Response(JSON.stringify({ success: true }), {
           headers: { ...corsHeaders, "Content-Type": "application/json" },
         });
@@ -348,6 +398,8 @@ serve(async (req) => {
         if (!room) throw new Error("Room not found");
         if (room.current_player_id !== playerId) throw new Error("Not your turn");
 
+        const playerCount = room.room_players.length;
+
         // Update bid
         await supabase
           .from("rooms")
@@ -359,7 +411,7 @@ serve(async (req) => {
 
         // Move to next player
         const currentPlayer = room.room_players.find((p: any) => p.player_id === playerId);
-        const nextPosition = (currentPlayer.position + 1) % 4;
+        const nextPosition = (currentPlayer.position + 1) % playerCount;
         const nextPlayer = room.room_players.find((p: any) => p.position === nextPosition);
 
         await supabase
@@ -384,17 +436,24 @@ serve(async (req) => {
 
         if (!room) throw new Error("Room not found");
 
-        // Mark player as passed
+        const playerCount = room.room_players.length;
+
+        // Mark player as passed (using is_ready as passed flag during bidding)
         await supabase
           .from("room_players")
-          .update({ is_ready: false }) // Reusing is_ready as "still in bidding"
+          .update({ is_ready: false })
           .eq("room_id", roomId)
           .eq("player_id", playerId);
 
-        // Check if bidding is over (only one player left or all passed)
-        const activeBidders = room.room_players.filter((p: any) => p.is_ready !== false);
+        // Check if bidding is over (only one player left not passed, or we have a bid winner)
+        const { data: updatedPlayers } = await supabase
+          .from("room_players")
+          .select("*")
+          .eq("room_id", roomId);
+
+        const activeBidders = updatedPlayers?.filter((p: any) => p.is_ready !== false) || [];
         
-        if (activeBidders.length <= 1 || room.bid_winner_id) {
+        if (activeBidders.length <= 1 && room.bid_winner_id) {
           // Bidding complete - move to playing phase
           await supabase
             .from("rooms")
@@ -409,10 +468,19 @@ serve(async (req) => {
               .eq("room_id", roomId);
           }
         } else {
-          // Move to next player
+          // Move to next player who hasn't passed
           const currentPlayer = room.room_players.find((p: any) => p.player_id === playerId);
-          const nextPosition = (currentPlayer.position + 1) % 4;
-          const nextPlayer = room.room_players.find((p: any) => p.position === nextPosition);
+          let nextPosition = (currentPlayer.position + 1) % playerCount;
+          let nextPlayer = room.room_players.find((p: any) => p.position === nextPosition);
+          
+          // Skip players who have passed
+          const updatedPlayersMap = new Map(updatedPlayers?.map((p: any) => [p.player_id, p]));
+          let attempts = 0;
+          while (updatedPlayersMap.get(nextPlayer?.player_id)?.is_ready === false && attempts < playerCount) {
+            nextPosition = (nextPosition + 1) % playerCount;
+            nextPlayer = room.room_players.find((p: any) => p.position === nextPosition);
+            attempts++;
+          }
 
           await supabase
             .from("rooms")
@@ -462,6 +530,7 @@ serve(async (req) => {
         if (!room) throw new Error("Room not found");
         if (room.current_player_id !== playerId) throw new Error("Not your turn");
 
+        const playerCount = room.room_players.length;
         const player = room.room_players.find((p: any) => p.player_id === playerId);
         const card = player.cards.find((c: any) => c.id === cardId);
 
@@ -511,15 +580,15 @@ serve(async (req) => {
           }
         }
 
-        // Check if trick is complete
-        if ((trick?.length || 0) + 1 === 4) {
+        // Check if trick is complete (all players have played)
+        if ((trick?.length || 0) + 1 === playerCount) {
           // Determine winner
           const fullTrick = [
             ...trick!.map((t: any) => ({ playerId: t.player_id, card: t.card, position: t.position })),
             { playerId, card, position: trick?.length || 0 },
           ];
           
-          const winnerId = determineTrickWinner(fullTrick, room.current_trump, leadSuit!);
+          const winnerId = determineTrickWinner(fullTrick, room.current_trump, leadSuit!, playerCount);
           const winnerPlayer = room.room_players.find((p: any) => p.player_id === winnerId);
 
           // Calculate points
@@ -529,7 +598,7 @@ serve(async (req) => {
           await supabase
             .from("room_players")
             .update({
-              tricks_won: [...existingTricks, fullTrick],
+              tricks_won: [...existingTricks, fullTrick.map(t => t.card)],
               round_score: (winnerPlayer.round_score || 0) + trickPoints,
             })
             .eq("id", winnerPlayer.id);
@@ -537,13 +606,10 @@ serve(async (req) => {
           // Clear trick
           await supabase.from("current_trick").delete().eq("room_id", roomId);
 
-          // Check if round is over
+          // Check if round is over (all players have no cards left)
           if (newHand.length === 0) {
-            // Round complete - calculate scores
-            await supabase
-              .from("rooms")
-              .update({ phase: "scoring" })
-              .eq("id", roomId);
+            // Round complete - start new round
+            await startNewRound(supabase, roomId, room);
           } else {
             // Winner starts next trick
             await supabase
@@ -553,7 +619,7 @@ serve(async (req) => {
           }
         } else {
           // Move to next player
-          const nextPosition = (player.position + 1) % 4;
+          const nextPosition = (player.position + 1) % playerCount;
           const nextPlayer = room.room_players.find((p: any) => p.position === nextPosition);
           
           await supabase
@@ -586,17 +652,28 @@ serve(async (req) => {
           .from("musik")
           .select()
           .eq("room_id", roomId)
-          .single();
+          .maybeSingle();
 
         // Get player's team to determine what cards to show
         const currentPlayer = room?.room_players.find((p: any) => p.player_id === playerId);
         const playerTeam = currentPlayer?.team;
+        const isTeamMode = room?.game_mode === 'teams';
 
-        // Filter cards based on team visibility
-        const playersWithVisibility = room?.room_players.map((p: any) => ({
-          ...p,
-          cards: p.team === playerTeam ? p.cards : p.cards.map(() => ({ hidden: true })),
-        }));
+        // Filter cards based on visibility:
+        // - Always show own cards
+        // - In team mode, show partner's cards
+        // - Hide opponent cards
+        const playersWithVisibility = room?.room_players.map((p: any) => {
+          const isMe = p.player_id === playerId;
+          const isPartner = isTeamMode && playerTeam && p.team === playerTeam && !isMe;
+          
+          return {
+            ...p,
+            cards: (isMe || isPartner) 
+              ? p.cards 
+              : p.cards.map(() => ({ hidden: true })),
+          };
+        });
 
         return new Response(
           JSON.stringify({
@@ -646,3 +723,108 @@ serve(async (req) => {
     );
   }
 });
+
+// Helper function to start a new round
+async function startNewRound(supabase: any, roomId: string, room: any) {
+  const playerCount = room.room_players.length;
+  const isTeamMode = room.game_mode === 'teams';
+  
+  // Calculate and update team/player scores
+  if (isTeamMode) {
+    // Team mode: aggregate team scores
+    const teamAPlayers = room.room_players.filter((p: any) => p.team === 'A');
+    const teamBPlayers = room.room_players.filter((p: any) => p.team === 'B');
+    
+    const teamAScore = teamAPlayers.reduce((sum: number, p: any) => sum + (p.round_score || 0), 0);
+    const teamBScore = teamBPlayers.reduce((sum: number, p: any) => sum + (p.round_score || 0), 0);
+    
+    // Add meld points
+    const teamAMelds = teamAPlayers.reduce((sum: number, p: any) => 
+      sum + (p.melds || []).reduce((ms: number, m: any) => ms + m.points, 0), 0);
+    const teamBMelds = teamBPlayers.reduce((sum: number, p: any) => 
+      sum + (p.melds || []).reduce((ms: number, m: any) => ms + m.points, 0), 0);
+    
+    const newTeamAScore = room.team_a_score + teamAScore + teamAMelds;
+    const newTeamBScore = room.team_b_score + teamBScore + teamBMelds;
+    
+    // Check for winner (1000 points)
+    if (newTeamAScore >= 1000 || newTeamBScore >= 1000) {
+      const winnerTeam = newTeamAScore >= 1000 ? 'A' : 'B';
+      const winnerName = winnerTeam === 'A' ? room.team_a_name : room.team_b_name;
+      const winnerScore = winnerTeam === 'A' ? newTeamAScore : newTeamBScore;
+      
+      // Record winner
+      await supabase.from("last_winners").insert({
+        team_name: winnerName,
+        score: String(winnerScore),
+        rounds: room.round_number,
+      });
+      
+      await supabase
+        .from("rooms")
+        .update({
+          status: "finished",
+          phase: "finished",
+          team_a_score: newTeamAScore,
+          team_b_score: newTeamBScore,
+        })
+        .eq("id", roomId);
+      
+      return;
+    }
+    
+    await supabase
+      .from("rooms")
+      .update({
+        team_a_score: newTeamAScore,
+        team_b_score: newTeamBScore,
+      })
+      .eq("id", roomId);
+  }
+  
+  // Deal new cards
+  const { hands, musik } = dealCards(playerCount, room.with_musik && playerCount === 4);
+  
+  // Update players with new cards
+  const sortedPlayers = [...room.room_players].sort((a: any, b: any) => a.position - b.position);
+  for (let i = 0; i < playerCount; i++) {
+    const player = sortedPlayers[i];
+    if (player) {
+      await supabase
+        .from("room_players")
+        .update({ 
+          cards: hands[i], 
+          round_score: 0, 
+          tricks_won: [], 
+          melds: [],
+          is_ready: true, // Reset ready for bidding
+        })
+        .eq("id", player.id);
+    }
+  }
+  
+  // Delete old musik and add new one if needed
+  await supabase.from("musik").delete().eq("room_id", roomId);
+  if (room.with_musik && playerCount === 4 && musik.length > 0) {
+    await supabase.from("musik").insert({
+      room_id: roomId,
+      cards: musik,
+    });
+  }
+  
+  // Update room for new round
+  const firstPlayerId = sortedPlayers[0]?.player_id;
+  await supabase
+    .from("rooms")
+    .update({
+      phase: "bidding",
+      round_number: room.round_number + 1,
+      current_player_id: firstPlayerId,
+      current_bid: 100,
+      current_trump: null,
+      bid_winner_id: null,
+    })
+    .eq("id", roomId);
+  
+  console.log(`[GameServer] New round ${room.round_number + 1} started in room ${roomId}`);
+}
