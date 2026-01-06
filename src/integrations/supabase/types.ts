@@ -166,8 +166,10 @@ export type Database = {
           current_bid: number | null
           current_player_id: string | null
           current_trump: string | null
+          game_mode: string
           host_id: string | null
           id: string
+          max_players: number
           name: string
           phase: string
           round_number: number
@@ -186,8 +188,10 @@ export type Database = {
           current_bid?: number | null
           current_player_id?: string | null
           current_trump?: string | null
+          game_mode?: string
           host_id?: string | null
           id?: string
+          max_players?: number
           name: string
           phase?: string
           round_number?: number
@@ -206,8 +210,10 @@ export type Database = {
           current_bid?: number | null
           current_player_id?: string | null
           current_trump?: string | null
+          game_mode?: string
           host_id?: string | null
           id?: string
+          max_players?: number
           name?: string
           phase?: string
           round_number?: number
