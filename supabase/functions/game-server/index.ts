@@ -182,7 +182,9 @@ serve(async (req) => {
       case "create_room": {
         const { name, nickname, withMusik, playerId, maxPlayers = 4, gameMode = 'ffa' } = data;
         
-        // Create room with maxPlayers and gameMode
+        console.log(`[GameServer] Creating room with: name=${name}, maxPlayers=${maxPlayers}, gameMode=${gameMode}`);
+        
+        // Create room - database now has max_players and game_mode columns
         const { data: room, error: roomError } = await supabase
           .from("rooms")
           .insert({
@@ -195,7 +197,10 @@ serve(async (req) => {
           .select()
           .single();
 
-        if (roomError) throw roomError;
+        if (roomError) {
+          console.error(`[GameServer] Room creation error:`, roomError);
+          throw roomError;
+        }
 
         // Add host as player
         const { error: playerError } = await supabase
@@ -208,7 +213,10 @@ serve(async (req) => {
             position: 0,
           });
 
-        if (playerError) throw playerError;
+        if (playerError) {
+          console.error(`[GameServer] Player creation error:`, playerError);
+          throw playerError;
+        }
 
         console.log(`[GameServer] Room created: ${room.id} (${maxPlayers} players, ${gameMode})`);
         return new Response(JSON.stringify({ success: true, room }), {
