@@ -172,10 +172,10 @@ export const useGameState = (roomId?: string) => {
     await callGameServer('pass', { roomId });
   }, [roomId, callGameServer]);
 
-  // Select trump
-  const selectTrump = useCallback(async (trump: string) => {
+  // Declare meld (K+Q of a suit) - sets trump automatically
+  const declareMeld = useCallback(async (suit: string) => {
     if (!roomId) return;
-    await callGameServer('select_trump', { roomId, trump });
+    await callGameServer('declare_meld', { roomId, suit });
   }, [roomId, callGameServer]);
 
   // Play card
@@ -241,7 +241,7 @@ export const useGameState = (roomId?: string) => {
     startGame,
     bid,
     pass,
-    selectTrump,
+    declareMeld,
     playCard,
     leaveRoom,
     fetchRoom,
