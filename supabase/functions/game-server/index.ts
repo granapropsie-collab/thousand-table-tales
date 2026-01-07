@@ -71,13 +71,13 @@ function dealCards(playerCount: number, withMusik: boolean): { hands: Card[][]; 
     }
     musik = deck.slice(21, 24);
   } else if (playerCount === 2) {
-    // 2 players: 10 cards each + 4 musik
-    for (let i = 0; i < 10; i++) {
+    // 2 players: 12 cards each (total 24 cards, no musik for 2 players)
+    for (let i = 0; i < 12; i++) {
       for (let p = 0; p < 2; p++) {
         hands[p].push(deck[i * 2 + p]);
       }
     }
-    musik = deck.slice(20, 24);
+    musik = []; // No musik in 2-player game
   }
 
   return { hands, musik };
@@ -796,6 +796,38 @@ serve(async (req) => {
           await supabase.from("rooms").delete().eq("id", roomId);
         }
 
+        return new Response(JSON.stringify({ success: true }), {
+          headers: { ...corsHeaders, "Content-Type": "application/json" },
+        });
+      }
+
+      // DELETE ROOM (host only)
+      case "delete_room": {
+        const { roomId, playerId } = data;
+
+        // Verify the player is the host
+        const { data: room } = await supabase
+          .from("rooms")
+          .select("host_id")
+          .eq("id", roomId)
+          .single();
+
+        if (!room) throw new Error("Room not found");
+        if (room.host_id !== playerId) throw new Error("Only the host can delete the room");
+
+        // Delete all players first
+        await supabase.from("room_players").delete().eq("room_id", roomId);
+        
+        // Delete musik
+        await supabase.from("musik").delete().eq("room_id", roomId);
+        
+        // Delete current trick
+        await supabase.from("current_trick").delete().eq("room_id", roomId);
+        
+        // Delete the room
+        await supabase.from("rooms").delete().eq("id", roomId);
+
+        console.log(`[GameServer] Room ${roomId} deleted by host ${playerId}`);
         return new Response(JSON.stringify({ success: true }), {
           headers: { ...corsHeaders, "Content-Type": "application/json" },
         });

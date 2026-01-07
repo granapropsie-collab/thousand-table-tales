@@ -17,7 +17,8 @@ const Game = () => {
     isMyTurn, 
     bid, 
     pass, 
-    playCard, 
+    playCard,
+    isPlayingCard,
     leaveRoom 
   } = useGameState(gameId);
   const { playSound, toggleSound, soundEnabled } = useSoundEffects();
@@ -66,6 +67,7 @@ const Game = () => {
   };
 
   const handlePlayCard = async (cardId: string) => {
+    if (isPlayingCard) return; // Prevent double-click
     playSound('card_play');
     await playCard(cardId);
   };
@@ -145,6 +147,7 @@ const Game = () => {
           playerId={playerId}
           onPlayCard={handlePlayCard}
           isMyTurn={isMyTurn}
+          isPlayingCard={isPlayingCard}
         />
       </main>
 
