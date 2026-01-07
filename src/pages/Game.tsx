@@ -1,11 +1,10 @@
 import { useState, useEffect, useRef } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
-import { ArrowLeft, MessageSquare, Volume2, VolumeX } from 'lucide-react';
+import { ArrowLeft, MessageSquare, Volume2, VolumeX, Trophy } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { GameTable } from '@/components/GameTable';
 import { useGameState } from '@/hooks/useGameState';
 import { useSoundEffects } from '@/hooks/useSoundEffects';
-import { cn } from '@/lib/utils';
 import tableFeltImage from '@/assets/table-felt.jpg';
 
 const Game = () => {
@@ -18,14 +17,12 @@ const Game = () => {
     isMyTurn, 
     bid, 
     pass, 
-    selectTrump, 
     playCard, 
     leaveRoom 
   } = useGameState(gameId);
   const { playSound, toggleSound, soundEnabled } = useSoundEffects();
 
   const [showBidding, setShowBidding] = useState(false);
-  const [showTrumpSelect, setShowTrumpSelect] = useState(false);
   const prevIsMyTurn = useRef(isMyTurn);
 
   // Play sound when it becomes my turn
@@ -44,15 +41,6 @@ const Game = () => {
       setShowBidding(false);
     }
   }, [room?.phase, isMyTurn]);
-
-  // Show trump selection for bid winner
-  useEffect(() => {
-    if (room?.phase === 'playing' && room.bid_winner_id === playerId && !room.current_trump) {
-      setShowTrumpSelect(true);
-    } else {
-      setShowTrumpSelect(false);
-    }
-  }, [room?.phase, room?.bid_winner_id, room?.current_trump, playerId]);
 
   // Play sound when trick is complete
   useEffect(() => {
@@ -77,12 +65,6 @@ const Game = () => {
     await pass();
   };
 
-  const handleSelectTrump = async (trump: string) => {
-    playSound('meld');
-    await selectTrump(trump);
-    setShowTrumpSelect(false);
-  };
-
   const handlePlayCard = async (cardId: string) => {
     playSound('card_play');
     await playCard(cardId);
@@ -104,6 +86,14 @@ const Game = () => {
       </div>
     );
   }
+
+  // Check if game is finished
+  const isGameFinished = room.phase === 'finished';
+  const winner = room.team_a_score >= 1000 
+    ? (room.game_mode === 'teams' ? room.team_a_name : room.room_players.find(p => p.position === 0)?.nickname)
+    : room.team_b_score >= 1000
+    ? (room.game_mode === 'teams' ? room.team_b_name : room.room_players.find(p => p.position === 1)?.nickname)
+    : null;
 
   return (
     <div 
@@ -195,50 +185,21 @@ const Game = () => {
         </div>
       )}
 
-      {/* Trump Selection Modal */}
-      {showTrumpSelect && (
+      {/* Game Finished Modal */}
+      {isGameFinished && winner && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-background/80 backdrop-blur-sm p-4 safe-area-bottom">
-          <div className="bg-card border border-border rounded-xl p-4 sm:p-6 max-w-sm w-full mx-4 animate-scale-in">
-            <h2 className="text-lg sm:text-xl font-display text-cream text-center mb-4 sm:mb-6">Wybierz Atut</h2>
-            
-            <div className="grid grid-cols-2 gap-3 sm:gap-4">
-              <Button 
-                variant="outline" 
-                size="lg" 
-                className="text-red-500 text-2xl sm:text-3xl h-16 sm:h-20 touch-target flex flex-col"
-                onClick={() => handleSelectTrump('hearts')}
-              >
-                <span>♥</span>
-                <span className="text-xs text-muted-foreground">Kier +100</span>
-              </Button>
-              <Button 
-                variant="outline" 
-                size="lg" 
-                className="text-red-500 text-2xl sm:text-3xl h-16 sm:h-20 touch-target flex flex-col"
-                onClick={() => handleSelectTrump('diamonds')}
-              >
-                <span>♦</span>
-                <span className="text-xs text-muted-foreground">Karo +80</span>
-              </Button>
-              <Button 
-                variant="outline" 
-                size="lg" 
-                className="text-cream text-2xl sm:text-3xl h-16 sm:h-20 touch-target flex flex-col"
-                onClick={() => handleSelectTrump('clubs')}
-              >
-                <span>♣</span>
-                <span className="text-xs text-muted-foreground">Trefl +60</span>
-              </Button>
-              <Button 
-                variant="outline" 
-                size="lg" 
-                className="text-cream text-2xl sm:text-3xl h-16 sm:h-20 touch-target flex flex-col"
-                onClick={() => handleSelectTrump('spades')}
-              >
-                <span>♠</span>
-                <span className="text-xs text-muted-foreground">Pik +40</span>
-              </Button>
-            </div>
+          <div className="bg-card border border-gold/50 rounded-xl p-6 sm:p-8 max-w-sm w-full mx-4 animate-scale-in text-center">
+            <Trophy className="w-16 h-16 text-gold mx-auto mb-4 animate-bounce-subtle" />
+            <h2 className="text-2xl sm:text-3xl font-display text-gold mb-2">Zwycięzca!</h2>
+            <p className="text-xl sm:text-2xl text-cream font-display mb-4">{winner}</p>
+            <p className="text-muted-foreground mb-6">
+              Wynik: {Math.max(room.team_a_score, room.team_b_score)} punktów
+              <br />
+              Liczba rund: {room.round_number}
+            </p>
+            <Button variant="gold" onClick={handleLeaveGame} className="w-full">
+              Wróć do lobby
+            </Button>
           </div>
         </div>
       )}

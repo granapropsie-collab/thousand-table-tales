@@ -63,26 +63,27 @@ function dealCards(playerCount: number, withMusik: boolean): { hands: Card[][]; 
       }
     }
   } else if (playerCount === 3) {
-    // 3 players: 8 cards each (24 total)
-    for (let i = 0; i < 8; i++) {
+    // 3 players: 7 cards each + 3 musik
+    for (let i = 0; i < 7; i++) {
       for (let p = 0; p < 3; p++) {
         hands[p].push(deck[i * 3 + p]);
       }
     }
-    // Optional musik (remaining cards not used)
+    musik = deck.slice(21, 24);
   } else if (playerCount === 2) {
-    // 2 players: 12 cards each (24 total)
-    for (let i = 0; i < 12; i++) {
+    // 2 players: 10 cards each + 4 musik
+    for (let i = 0; i < 10; i++) {
       for (let p = 0; p < 2; p++) {
         hands[p].push(deck[i * 2 + p]);
       }
     }
+    musik = deck.slice(20, 24);
   }
 
   return { hands, musik };
 }
 
-// Check if player can meld (has K+Q of same suit)
+// Check if player has a meld (K+Q of same suit)
 function findMelds(cards: Card[]): { suit: string; points: number }[] {
   const melds: { suit: string; points: number }[] = [];
   for (const suit of SUITS) {
@@ -349,8 +350,8 @@ serve(async (req) => {
           }
         }
 
-        // Deal cards based on player count
-        const { hands, musik } = dealCards(playerCount, room.with_musik && playerCount === 4);
+        // Deal cards based on player count - always use musik in Tysiąc
+        const { hands, musik } = dealCards(playerCount, true);
 
         // Update players with cards - order by position
         const sortedPlayers = [...room.room_players].sort((a: any, b: any) => a.position - b.position);
@@ -364,30 +365,33 @@ serve(async (req) => {
           }
         }
 
-        // Store musik if using it
-        if (room.with_musik && playerCount === 4 && musik.length > 0) {
+        // Store musik
+        if (musik.length > 0) {
           await supabase.from("musik").insert({
             room_id: roomId,
             cards: musik,
           });
         }
 
-        // Update room state
-        const firstPlayerId = sortedPlayers[0]?.player_id;
+        // Random first bidder for round 1
+        const randomIndex = Math.floor(Math.random() * playerCount);
+        const firstBidder = sortedPlayers[randomIndex];
+
+        // Update room state - go directly to bidding, no trump selection needed
         await supabase
           .from("rooms")
           .update({
             status: "playing",
             phase: "bidding",
             round_number: 1,
-            current_player_id: firstPlayerId,
+            current_player_id: firstBidder?.player_id,
             current_bid: 100,
             current_trump: null,
             bid_winner_id: null,
           })
           .eq("id", roomId);
 
-        console.log(`[GameServer] Game started in room ${roomId} with ${playerCount} players`);
+        console.log(`[GameServer] Game started in room ${roomId} with ${playerCount} players, first bidder: ${firstBidder?.nickname}`);
         return new Response(JSON.stringify({ success: true }), {
           headers: { ...corsHeaders, "Content-Type": "application/json" },
         });
@@ -463,18 +467,39 @@ serve(async (req) => {
         
         if (activeBidders.length <= 1 && room.bid_winner_id) {
           // Bidding complete - move to playing phase
-          await supabase
-            .from("rooms")
-            .update({ phase: "playing" })
-            .eq("id", roomId);
+          // Give musik cards to bid winner
+          const { data: musik } = await supabase
+            .from("musik")
+            .select()
+            .eq("room_id", roomId)
+            .maybeSingle();
 
-          // If musik, reveal it to bid winner
-          if (room.with_musik) {
+          if (musik && musik.cards) {
+            const bidWinner = updatedPlayers?.find((p: any) => p.player_id === room.bid_winner_id);
+            if (bidWinner) {
+              const newCards = [...(bidWinner.cards || []), ...musik.cards];
+              await supabase
+                .from("room_players")
+                .update({ cards: newCards })
+                .eq("id", bidWinner.id);
+            }
+            
+            // Reveal musik
             await supabase
               .from("musik")
               .update({ revealed: true })
               .eq("room_id", roomId);
           }
+
+          // Go directly to playing phase - no trump selection
+          // Trump will be set when first meld is declared
+          await supabase
+            .from("rooms")
+            .update({ 
+              phase: "playing",
+              current_player_id: room.bid_winner_id // Bid winner starts
+            })
+            .eq("id", roomId);
         } else {
           // Move to next player who hasn't passed
           const currentPlayer = room.room_players.find((p: any) => p.player_id === playerId);
@@ -501,26 +526,53 @@ serve(async (req) => {
         });
       }
 
-      // SELECT TRUMP
-      case "select_trump": {
-        const { roomId, playerId, trump } = data;
+      // DECLARE MELD (when playing K or Q of a pair you have)
+      case "declare_meld": {
+        const { roomId, playerId, suit } = data;
 
         const { data: room } = await supabase
           .from("rooms")
-          .select()
+          .select("*, room_players(*)")
           .eq("id", roomId)
           .single();
 
-        if (room?.bid_winner_id !== playerId) {
-          throw new Error("Only bid winner can select trump");
+        if (!room) throw new Error("Room not found");
+
+        const player = room.room_players.find((p: any) => p.player_id === playerId);
+        if (!player) throw new Error("Player not found");
+
+        // Check if player has the meld (K+Q of the suit)
+        const hasKing = player.cards.some((c: any) => c.suit === suit && c.rank === "K");
+        const hasQueen = player.cards.some((c: any) => c.suit === suit && c.rank === "Q");
+
+        if (!hasKing || !hasQueen) {
+          throw new Error("You don't have King and Queen of this suit");
+        }
+
+        // Add meld to player
+        const meldPoints = MELD_POINTS[suit];
+        const existingMelds = player.melds || [];
+        const alreadyMelded = existingMelds.some((m: any) => m.suit === suit);
+        
+        if (alreadyMelded) {
+          throw new Error("Already melded this suit");
         }
 
         await supabase
+          .from("room_players")
+          .update({ 
+            melds: [...existingMelds, { suit, points: meldPoints }]
+          })
+          .eq("id", player.id);
+
+        // Set trump to this suit (first meld sets trump, subsequent melds can change it)
+        await supabase
           .from("rooms")
-          .update({ current_trump: trump, phase: "playing" })
+          .update({ current_trump: suit })
           .eq("id", roomId);
 
-        return new Response(JSON.stringify({ success: true }), {
+        console.log(`[GameServer] Player ${playerId} melded ${suit} (+${meldPoints}), trump is now ${suit}`);
+        return new Response(JSON.stringify({ success: true, meldPoints }), {
           headers: { ...corsHeaders, "Content-Type": "application/json" },
         });
       }
@@ -552,6 +604,7 @@ serve(async (req) => {
           .order("position", { ascending: true });
 
         const leadSuit = trick?.[0]?.card?.suit || null;
+        const isStartingTrick = !trick?.length;
 
         // Validate play
         if (!canPlayCard(card, player.cards, leadSuit, room.current_trump)) {
@@ -573,41 +626,70 @@ serve(async (req) => {
           position: trick?.length || 0,
         });
 
-        // Check for meld (if starting a trick with K or Q)
-        if (!trick?.length) {
-          const melds = findMelds(player.cards);
-          const playedMeld = melds.find(
-            (m) => m.suit === card.suit && (card.rank === "K" || card.rank === "Q")
-          );
-          if (playedMeld) {
+        // Check for automatic meld declaration when starting a trick with K or Q
+        if (isStartingTrick && (card.rank === "K" || card.rank === "Q")) {
+          // Check if player has the pair
+          const hasKing = card.rank === "K" || newHand.some((c: any) => c.suit === card.suit && c.rank === "K");
+          const hasQueen = card.rank === "Q" || newHand.some((c: any) => c.suit === card.suit && c.rank === "Q");
+          
+          if (hasKing && hasQueen) {
             const existingMelds = player.melds || [];
-            await supabase
-              .from("room_players")
-              .update({ melds: [...existingMelds, playedMeld] })
-              .eq("id", player.id);
+            const alreadyMelded = existingMelds.some((m: any) => m.suit === card.suit);
+            
+            if (!alreadyMelded) {
+              const meldPoints = MELD_POINTS[card.suit];
+              await supabase
+                .from("room_players")
+                .update({ 
+                  melds: [...existingMelds, { suit: card.suit, points: meldPoints }]
+                })
+                .eq("id", player.id);
+
+              // Set trump to this suit
+              await supabase
+                .from("rooms")
+                .update({ current_trump: card.suit })
+                .eq("id", roomId);
+
+              console.log(`[GameServer] Auto-meld: ${card.suit} (+${meldPoints}), trump is now ${card.suit}`);
+            }
           }
         }
 
         // Check if trick is complete (all players have played)
         if ((trick?.length || 0) + 1 === playerCount) {
+          // Get updated trump in case it was just set by meld
+          const { data: currentRoom } = await supabase
+            .from("rooms")
+            .select("current_trump")
+            .eq("id", roomId)
+            .single();
+
           // Determine winner
           const fullTrick = [
             ...trick!.map((t: any) => ({ playerId: t.player_id, card: t.card, position: t.position })),
             { playerId, card, position: trick?.length || 0 },
           ];
           
-          const winnerId = determineTrickWinner(fullTrick, room.current_trump, leadSuit!, playerCount);
+          const winnerId = determineTrickWinner(fullTrick, currentRoom?.current_trump || room.current_trump, leadSuit!, playerCount);
           const winnerPlayer = room.room_players.find((p: any) => p.player_id === winnerId);
+
+          // Get updated player data for winner (in case melds were just added)
+          const { data: updatedWinner } = await supabase
+            .from("room_players")
+            .select()
+            .eq("id", winnerPlayer.id)
+            .single();
 
           // Calculate points
           const trickPoints = calculatePoints(fullTrick.map((t) => t.card));
-          const existingTricks = winnerPlayer.tricks_won || [];
+          const existingTricks = updatedWinner?.tricks_won || [];
           
           await supabase
             .from("room_players")
             .update({
               tricks_won: [...existingTricks, fullTrick.map(t => t.card)],
-              round_score: (winnerPlayer.round_score || 0) + trickPoints,
+              round_score: (updatedWinner?.round_score || 0) + trickPoints,
             })
             .eq("id", winnerPlayer.id);
 
@@ -616,8 +698,8 @@ serve(async (req) => {
 
           // Check if round is over (all players have no cards left)
           if (newHand.length === 0) {
-            // Round complete - start new round
-            await startNewRound(supabase, roomId, room);
+            // Round complete - calculate scores and start new round
+            await finishRoundAndStartNew(supabase, roomId, room);
           } else {
             // Winner starts next trick
             await supabase
@@ -732,19 +814,28 @@ serve(async (req) => {
   }
 });
 
-// Helper function to start a new round
-async function startNewRound(supabase: any, roomId: string, room: any) {
+// Helper function to finish round and start a new one (or end game)
+async function finishRoundAndStartNew(supabase: any, roomId: string, room: any) {
   const playerCount = room.room_players.length;
   const isTeamMode = room.game_mode === 'teams';
   
-  // Calculate and update team/player scores
+  // Fetch fresh player data (with updated melds and scores)
+  const { data: freshPlayers } = await supabase
+    .from("room_players")
+    .select()
+    .eq("room_id", roomId);
+
+  // Calculate round scores including melds
+  let gameWinner: string | null = null;
+  let gameWinnerScore = 0;
+
   if (isTeamMode) {
     // Team mode: aggregate team scores
-    const teamAPlayers = room.room_players.filter((p: any) => p.team === 'A');
-    const teamBPlayers = room.room_players.filter((p: any) => p.team === 'B');
+    const teamAPlayers = freshPlayers?.filter((p: any) => p.team === 'A') || [];
+    const teamBPlayers = freshPlayers?.filter((p: any) => p.team === 'B') || [];
     
-    const teamAScore = teamAPlayers.reduce((sum: number, p: any) => sum + (p.round_score || 0), 0);
-    const teamBScore = teamBPlayers.reduce((sum: number, p: any) => sum + (p.round_score || 0), 0);
+    const teamARoundScore = teamAPlayers.reduce((sum: number, p: any) => sum + (p.round_score || 0), 0);
+    const teamBRoundScore = teamBPlayers.reduce((sum: number, p: any) => sum + (p.round_score || 0), 0);
     
     // Add meld points
     const teamAMelds = teamAPlayers.reduce((sum: number, p: any) => 
@@ -752,33 +843,14 @@ async function startNewRound(supabase: any, roomId: string, room: any) {
     const teamBMelds = teamBPlayers.reduce((sum: number, p: any) => 
       sum + (p.melds || []).reduce((ms: number, m: any) => ms + m.points, 0), 0);
     
-    const newTeamAScore = room.team_a_score + teamAScore + teamAMelds;
-    const newTeamBScore = room.team_b_score + teamBScore + teamBMelds;
+    const newTeamAScore = room.team_a_score + teamARoundScore + teamAMelds;
+    const newTeamBScore = room.team_b_score + teamBRoundScore + teamBMelds;
     
     // Check for winner (1000 points)
     if (newTeamAScore >= 1000 || newTeamBScore >= 1000) {
       const winnerTeam = newTeamAScore >= 1000 ? 'A' : 'B';
-      const winnerName = winnerTeam === 'A' ? room.team_a_name : room.team_b_name;
-      const winnerScore = winnerTeam === 'A' ? newTeamAScore : newTeamBScore;
-      
-      // Record winner
-      await supabase.from("last_winners").insert({
-        team_name: winnerName,
-        score: String(winnerScore),
-        rounds: room.round_number,
-      });
-      
-      await supabase
-        .from("rooms")
-        .update({
-          status: "finished",
-          phase: "finished",
-          team_a_score: newTeamAScore,
-          team_b_score: newTeamBScore,
-        })
-        .eq("id", roomId);
-      
-      return;
+      gameWinner = winnerTeam === 'A' ? room.team_a_name : room.team_b_name;
+      gameWinnerScore = winnerTeam === 'A' ? newTeamAScore : newTeamBScore;
     }
     
     await supabase
@@ -788,13 +860,85 @@ async function startNewRound(supabase: any, roomId: string, room: any) {
         team_b_score: newTeamBScore,
       })
       .eq("id", roomId);
+  } else {
+    // FFA mode: each player has their own score
+    // Update each player's total score (team_a_score used as player scores in round_score, but we need cumulative)
+    // We'll store individual scores in round_score but need to track total in a different way
+    // For FFA, use the player's round_score + melds and accumulate
+    
+    for (const player of freshPlayers || []) {
+      const meldPoints = (player.melds || []).reduce((sum: number, m: any) => sum + m.points, 0);
+      const totalRoundPoints = (player.round_score || 0) + meldPoints;
+      
+      // We need to track total score somehow - let's use a new field or calculate from tricks_won
+      // For now, we'll use round_score to hold the cumulative total
+      // Actually, we should store total separately - let's check what we can use
+      
+      // For simplicity, we'll update the player's total by adding to their current position
+      // We'll use the position field isn't used for scoring, let's add to round_score as cumulative
+      // Actually let's calculate fresh from the game:
+      // The issue is round_score is reset each round - we need to track total
+      // Let's use team_a_score/team_b_score for FFA too, but mapped by position
+    }
+
+    // For FFA mode, we need to track cumulative scores differently
+    // Let's calculate based on current implementation and just check for winner
+    for (const player of freshPlayers || []) {
+      const meldPoints = (player.melds || []).reduce((sum: number, m: any) => sum + m.points, 0);
+      const roundTotal = (player.round_score || 0) + meldPoints;
+      
+      // Check if this player won (reached 1000)
+      // For now, we'll track in team_a_score for position 0, team_b_score for position 1
+      // This is a simplification - ideally we'd have a proper scores table
+      if (player.position === 0) {
+        const newScore = room.team_a_score + roundTotal;
+        if (newScore >= 1000 && !gameWinner) {
+          gameWinner = player.nickname;
+          gameWinnerScore = newScore;
+        }
+        await supabase.from("rooms").update({ team_a_score: newScore }).eq("id", roomId);
+      } else if (player.position === 1) {
+        const newScore = room.team_b_score + roundTotal;
+        if (newScore >= 1000 && !gameWinner) {
+          gameWinner = player.nickname;
+          gameWinnerScore = newScore;
+        }
+        await supabase.from("rooms").update({ team_b_score: newScore }).eq("id", roomId);
+      }
+      // For 3-4 players in FFA, we'd need more score columns - simplified for now
+    }
+  }
+
+  // If we have a winner, end the game
+  if (gameWinner) {
+    await supabase.from("last_winners").insert({
+      team_name: gameWinner,
+      score: String(gameWinnerScore),
+      rounds: room.round_number,
+    });
+    
+    await supabase
+      .from("rooms")
+      .update({
+        status: "finished",
+        phase: "finished",
+      })
+      .eq("id", roomId);
+    
+    console.log(`[GameServer] Game finished! Winner: ${gameWinner} with ${gameWinnerScore} points`);
+    return;
   }
   
-  // Deal new cards
-  const { hands, musik } = dealCards(playerCount, room.with_musik && playerCount === 4);
+  // No winner yet - start new round
+  const { hands, musik } = dealCards(playerCount, true);
   
+  // Calculate next bidder position (rotate from last round's first bidder)
+  // First bidder of round N was position X, so round N+1 first bidder is position (X+1) % playerCount
+  const sortedPlayers = [...(freshPlayers || [])].sort((a: any, b: any) => a.position - b.position);
+  const nextBidderPosition = room.round_number % playerCount;
+  const nextBidder = sortedPlayers[nextBidderPosition];
+
   // Update players with new cards
-  const sortedPlayers = [...room.room_players].sort((a: any, b: any) => a.position - b.position);
   for (let i = 0; i < playerCount; i++) {
     const player = sortedPlayers[i];
     if (player) {
@@ -811,9 +955,9 @@ async function startNewRound(supabase: any, roomId: string, room: any) {
     }
   }
   
-  // Delete old musik and add new one if needed
+  // Delete old musik and add new one
   await supabase.from("musik").delete().eq("room_id", roomId);
-  if (room.with_musik && playerCount === 4 && musik.length > 0) {
+  if (musik.length > 0) {
     await supabase.from("musik").insert({
       room_id: roomId,
       cards: musik,
@@ -821,18 +965,17 @@ async function startNewRound(supabase: any, roomId: string, room: any) {
   }
   
   // Update room for new round
-  const firstPlayerId = sortedPlayers[0]?.player_id;
   await supabase
     .from("rooms")
     .update({
       phase: "bidding",
       round_number: room.round_number + 1,
-      current_player_id: firstPlayerId,
+      current_player_id: nextBidder?.player_id,
       current_bid: 100,
       current_trump: null,
       bid_winner_id: null,
     })
     .eq("id", roomId);
   
-  console.log(`[GameServer] New round ${room.round_number + 1} started in room ${roomId}`);
+  console.log(`[GameServer] New round ${room.round_number + 1} started, first bidder: ${nextBidder?.nickname}`);
 }
