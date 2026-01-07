@@ -9,7 +9,7 @@ import { useRoomsList, useGameState } from '@/hooks/useGameState';
 const Index = () => {
   const navigate = useNavigate();
   const { rooms, lastWinner } = useRoomsList();
-  const { createRoom, joinRoom, playerId } = useGameState();
+  const { createRoom, joinRoom, deleteRoom, playerId } = useGameState();
   const [nickname, setNickname] = useState(() => 
     localStorage.getItem('tysiac_nickname') || ''
   );
@@ -34,6 +34,14 @@ const Index = () => {
     const room = await createRoom(data.roomName, data.nickname, data.withMusik, data.maxPlayers, data.gameMode);
     if (room) {
       navigate(`/room/${room.id}`);
+    }
+  };
+
+  const handleDeleteRoom = async (roomId: string) => {
+    try {
+      await deleteRoom(roomId);
+    } catch (error) {
+      console.error('Failed to delete room:', error);
     }
   };
 
@@ -92,9 +100,12 @@ const Index = () => {
                   id={room.id}
                   name={room.name}
                   playerCount={room.room_players?.length || 0}
-                  maxPlayers={4}
+                  maxPlayers={room.max_players || 4}
                   status={room.status}
+                  hostId={room.host_id}
+                  currentPlayerId={playerId}
                   onJoin={handleJoinRoom}
+                  onDelete={handleDeleteRoom}
                 />
               ))}
               

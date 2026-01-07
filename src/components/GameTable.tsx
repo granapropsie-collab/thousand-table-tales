@@ -1,3 +1,4 @@
+import { useState, useCallback } from 'react';
 import { Room, RoomPlayer, TrickCard, Card } from '@/hooks/useGameState';
 import { PlayingCard } from './PlayingCard';
 import { PlayerAvatar } from './PlayerAvatar';
@@ -10,6 +11,7 @@ interface GameTableProps {
   playerId: string;
   onPlayCard: (cardId: string) => void;
   isMyTurn: boolean;
+  isPlayingCard?: boolean;
 }
 
 const suitSymbols = {
@@ -27,6 +29,7 @@ export const GameTable = ({
   playerId,
   onPlayCard,
   isMyTurn,
+  isPlayingCard = false,
 }: GameTableProps) => {
   const players = room.room_players;
   const playerCount = players.length;
@@ -69,7 +72,7 @@ export const GameTable = ({
   const leadSuit = currentTrick[0]?.card?.suit || null;
   
   const canPlayCard = (card: Card) => {
-    if (!isMyTurn || room.phase !== 'playing') return false;
+    if (!isMyTurn || room.phase !== 'playing' || isPlayingCard) return false;
     if (!leadSuit) return true; // First card in trick
     
     const myCards = orderedPlayers[0]?.cards.filter(c => !c.hidden) || [];

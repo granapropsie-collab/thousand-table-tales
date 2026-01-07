@@ -1,4 +1,4 @@
-import { Users, Play, Clock } from 'lucide-react';
+import { Users, Play, Clock, Trash2 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { cn } from '@/lib/utils';
 
@@ -8,7 +8,10 @@ interface RoomCardProps {
   playerCount: number;
   maxPlayers: number;
   status: 'waiting' | 'playing' | 'finished';
+  hostId?: string;
+  currentPlayerId?: string;
   onJoin: (roomId: string) => void;
+  onDelete?: (roomId: string) => void;
 }
 
 export const RoomCard = ({
@@ -17,10 +20,21 @@ export const RoomCard = ({
   playerCount,
   maxPlayers,
   status,
+  hostId,
+  currentPlayerId,
   onJoin,
+  onDelete,
 }: RoomCardProps) => {
   const isFull = playerCount >= maxPlayers;
   const canJoin = status === 'waiting' && !isFull;
+  const isHost = hostId === currentPlayerId;
+
+  const handleDelete = (e: React.MouseEvent) => {
+    e.stopPropagation();
+    if (onDelete && confirm('Czy na pewno chcesz usunąć ten pokój?')) {
+      onDelete(id);
+    }
+  };
 
   return (
     <div
@@ -31,26 +45,38 @@ export const RoomCard = ({
       )}
     >
       <div className="flex items-center justify-between mb-3">
-        <h3 className="font-display text-lg text-cream truncate">{name}</h3>
-        <div
-          className={cn(
-            'flex items-center gap-1 text-xs px-2 py-1 rounded-full',
-            status === 'waiting'
-              ? 'bg-status-waiting/20 text-status-waiting'
-              : 'bg-status-active/20 text-status-active'
+        <h3 className="font-display text-lg text-cream truncate flex-1">{name}</h3>
+        <div className="flex items-center gap-2">
+          {isHost && onDelete && (
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={handleDelete}
+              className="text-red-400 hover:text-red-300 hover:bg-red-500/20 h-7 w-7 p-0"
+            >
+              <Trash2 className="w-4 h-4" />
+            </Button>
           )}
-        >
-          {status === 'waiting' ? (
-            <>
-              <Clock className="w-3 h-3" />
-              Oczekiwanie
-            </>
-          ) : (
-            <>
-              <Play className="w-3 h-3" />
-              W trakcie
-            </>
-          )}
+          <div
+            className={cn(
+              'flex items-center gap-1 text-xs px-2 py-1 rounded-full',
+              status === 'waiting'
+                ? 'bg-status-waiting/20 text-status-waiting'
+                : 'bg-status-active/20 text-status-active'
+            )}
+          >
+            {status === 'waiting' ? (
+              <>
+                <Clock className="w-3 h-3" />
+                Oczekiwanie
+              </>
+            ) : (
+              <>
+                <Play className="w-3 h-3" />
+                W trakcie
+              </>
+            )}
+          </div>
         </div>
       </div>
 

@@ -68,6 +68,7 @@ export const useGameState = (roomId?: string) => {
   const [room, setRoom] = useState<Room | null>(null);
   const [currentTrick, setCurrentTrick] = useState<TrickCard[]>([]);
   const [loading, setLoading] = useState(false);
+  const [isPlayingCard, setIsPlayingCard] = useState(false);
   const [playerId] = useState(getPlayerId);
 
   // Call edge function
@@ -178,17 +179,29 @@ export const useGameState = (roomId?: string) => {
     await callGameServer('declare_meld', { roomId, suit });
   }, [roomId, callGameServer]);
 
-  // Play card
+  // Play card with debounce to prevent double-clicks
   const playCard = useCallback(async (cardId: string) => {
-    if (!roomId) return;
-    await callGameServer('play_card', { roomId, cardId });
-  }, [roomId, callGameServer]);
+    if (!roomId || isPlayingCard) return;
+    setIsPlayingCard(true);
+    try {
+      await callGameServer('play_card', { roomId, cardId });
+    } finally {
+      // Reset after a short delay to allow UI to update
+      setTimeout(() => setIsPlayingCard(false), 500);
+    }
+  }, [roomId, callGameServer, isPlayingCard]);
 
   // Leave room
   const leaveRoom = useCallback(async () => {
     if (!roomId) return;
     await callGameServer('leave_room', { roomId });
   }, [roomId, callGameServer]);
+
+  // Delete room (host only)
+  const deleteRoom = useCallback(async (targetRoomId: string) => {
+    await callGameServer('delete_room', { roomId: targetRoomId });
+    toast.success('Pokój usunięty!');
+  }, [callGameServer]);
 
   // Subscribe to realtime updates
   useEffect(() => {
@@ -233,6 +246,7 @@ export const useGameState = (roomId?: string) => {
     currentPlayer,
     isHost,
     isMyTurn,
+    isPlayingCard,
     createRoom,
     joinRoom,
     selectTeam,
@@ -244,6 +258,7 @@ export const useGameState = (roomId?: string) => {
     declareMeld,
     playCard,
     leaveRoom,
+    deleteRoom,
     fetchRoom,
   };
 };
