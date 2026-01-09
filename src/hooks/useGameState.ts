@@ -22,6 +22,7 @@ export interface RoomPlayer {
   tricks_won: any[];
   melds: { suit: string; points: number }[];
   round_score: number;
+  total_score: number;
 }
 
 export interface Room {

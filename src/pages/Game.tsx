@@ -91,11 +91,26 @@ const Game = () => {
 
   // Check if game is finished
   const isGameFinished = room.phase === 'finished';
-  const winner = room.team_a_score >= 1000 
-    ? (room.game_mode === 'teams' ? room.team_a_name : room.room_players.find(p => p.position === 0)?.nickname)
-    : room.team_b_score >= 1000
-    ? (room.game_mode === 'teams' ? room.team_b_name : room.room_players.find(p => p.position === 1)?.nickname)
-    : null;
+  
+  // Find winner - in FFA mode, find player with total_score >= 1000
+  const getWinner = () => {
+    if (!isGameFinished) return null;
+    
+    if (room.game_mode === 'teams') {
+      if (room.team_a_score >= 1000) return room.team_a_name;
+      if (room.team_b_score >= 1000) return room.team_b_name;
+    } else {
+      // FFA mode - find player with highest total_score >= 1000
+      const winner = room.room_players.find(p => (p.total_score || 0) >= 1000);
+      if (winner) return winner.nickname;
+    }
+    return null;
+  };
+  
+  const winner = getWinner();
+  const winnerScore = room.game_mode === 'teams'
+    ? Math.max(room.team_a_score, room.team_b_score)
+    : room.room_players.reduce((max, p) => Math.max(max, p.total_score || 0), 0);
 
   return (
     <div 
@@ -196,7 +211,7 @@ const Game = () => {
             <h2 className="text-2xl sm:text-3xl font-display text-gold mb-2">Zwycięzca!</h2>
             <p className="text-xl sm:text-2xl text-cream font-display mb-4">{winner}</p>
             <p className="text-muted-foreground mb-6">
-              Wynik: {Math.max(room.team_a_score, room.team_b_score)} punktów
+              Wynik: {winnerScore} punktów
               <br />
               Liczba rund: {room.round_number}
             </p>

@@ -907,6 +907,8 @@ async function finishRoundAndStartNew(supabase: any, roomId: string, room: any) 
     const newTeamAScore = room.team_a_score + teamARoundScore + teamAMelds;
     const newTeamBScore = room.team_b_score + teamBRoundScore + teamBMelds;
     
+    console.log(`[GameServer] Team scores: A=${newTeamAScore} (round: ${teamARoundScore}, melds: ${teamAMelds}), B=${newTeamBScore} (round: ${teamBRoundScore}, melds: ${teamBMelds})`);
+    
     // Check for winner (1000 points)
     if (newTeamAScore >= 1000 || newTeamBScore >= 1000) {
       const winnerTeam = newTeamAScore >= 1000 ? 'A' : 'B';
@@ -922,51 +924,25 @@ async function finishRoundAndStartNew(supabase: any, roomId: string, room: any) 
       })
       .eq("id", roomId);
   } else {
-    // FFA mode: each player has their own score
-    // Update each player's total score (team_a_score used as player scores in round_score, but we need cumulative)
-    // We'll store individual scores in round_score but need to track total in a different way
-    // For FFA, use the player's round_score + melds and accumulate
-    
-    for (const player of freshPlayers || []) {
-      const meldPoints = (player.melds || []).reduce((sum: number, m: any) => sum + m.points, 0);
-      const totalRoundPoints = (player.round_score || 0) + meldPoints;
-      
-      // We need to track total score somehow - let's use a new field or calculate from tricks_won
-      // For now, we'll use round_score to hold the cumulative total
-      // Actually, we should store total separately - let's check what we can use
-      
-      // For simplicity, we'll update the player's total by adding to their current position
-      // We'll use the position field isn't used for scoring, let's add to round_score as cumulative
-      // Actually let's calculate fresh from the game:
-      // The issue is round_score is reset each round - we need to track total
-      // Let's use team_a_score/team_b_score for FFA too, but mapped by position
-    }
-
-    // For FFA mode, we need to track cumulative scores differently
-    // Let's calculate based on current implementation and just check for winner
+    // FFA mode: each player has their own total_score
     for (const player of freshPlayers || []) {
       const meldPoints = (player.melds || []).reduce((sum: number, m: any) => sum + m.points, 0);
       const roundTotal = (player.round_score || 0) + meldPoints;
+      const newTotalScore = (player.total_score || 0) + roundTotal;
+      
+      console.log(`[GameServer] Player ${player.nickname}: round=${player.round_score}, melds=${meldPoints}, total=${newTotalScore}`);
+      
+      // Update player's total score
+      await supabase
+        .from("room_players")
+        .update({ total_score: newTotalScore })
+        .eq("id", player.id);
       
       // Check if this player won (reached 1000)
-      // For now, we'll track in team_a_score for position 0, team_b_score for position 1
-      // This is a simplification - ideally we'd have a proper scores table
-      if (player.position === 0) {
-        const newScore = room.team_a_score + roundTotal;
-        if (newScore >= 1000 && !gameWinner) {
-          gameWinner = player.nickname;
-          gameWinnerScore = newScore;
-        }
-        await supabase.from("rooms").update({ team_a_score: newScore }).eq("id", roomId);
-      } else if (player.position === 1) {
-        const newScore = room.team_b_score + roundTotal;
-        if (newScore >= 1000 && !gameWinner) {
-          gameWinner = player.nickname;
-          gameWinnerScore = newScore;
-        }
-        await supabase.from("rooms").update({ team_b_score: newScore }).eq("id", roomId);
+      if (newTotalScore >= 1000 && !gameWinner) {
+        gameWinner = player.nickname;
+        gameWinnerScore = newTotalScore;
       }
-      // For 3-4 players in FFA, we'd need more score columns - simplified for now
     }
   }
 
@@ -994,12 +970,11 @@ async function finishRoundAndStartNew(supabase: any, roomId: string, room: any) 
   const { hands, musik } = dealCards(playerCount, true);
   
   // Calculate next bidder position (rotate from last round's first bidder)
-  // First bidder of round N was position X, so round N+1 first bidder is position (X+1) % playerCount
   const sortedPlayers = [...(freshPlayers || [])].sort((a: any, b: any) => a.position - b.position);
   const nextBidderPosition = room.round_number % playerCount;
   const nextBidder = sortedPlayers[nextBidderPosition];
 
-  // Update players with new cards
+  // Update players with new cards (reset round_score but keep total_score)
   for (let i = 0; i < playerCount; i++) {
     const player = sortedPlayers[i];
     if (player) {
