@@ -182,12 +182,19 @@ export const GameTable = ({
           </>
         ) : (
           <>
-            {orderedPlayers.slice(0, 4).map((player, i) => (
-              <div key={player.id} className="flex items-center gap-1 sm:gap-2">
-                <span className="text-cream text-[10px] sm:text-xs truncate max-w-12 sm:max-w-20">{player.nickname}</span>
-                <span className="text-gold font-display text-xs sm:text-sm ml-auto">{player.round_score}</span>
-              </div>
-            ))}
+            {orderedPlayers.slice(0, 4).map((player, i) => {
+              // Calculate current round points including melds
+              const meldPoints = (player.melds || []).reduce((sum, m) => sum + m.points, 0);
+              const currentRoundTotal = (player.round_score || 0) + meldPoints;
+              const totalWithCurrentRound = (player.total_score || 0) + currentRoundTotal;
+              
+              return (
+                <div key={player.id} className="flex items-center gap-1 sm:gap-2">
+                  <span className="text-cream text-[10px] sm:text-xs truncate max-w-12 sm:max-w-20">{player.nickname}</span>
+                  <span className="text-gold font-display text-xs sm:text-sm ml-auto">{totalWithCurrentRound}</span>
+                </div>
+              );
+            })}
           </>
         )}
       </div>

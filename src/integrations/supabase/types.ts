@@ -116,6 +116,7 @@ export type Database = {
           room_id: string
           round_score: number
           team: string | null
+          total_score: number
           tricks_won: Json
         }
         Insert: {
@@ -131,6 +132,7 @@ export type Database = {
           room_id: string
           round_score?: number
           team?: string | null
+          total_score?: number
           tricks_won?: Json
         }
         Update: {
@@ -146,6 +148,7 @@ export type Database = {
           room_id?: string
           round_score?: number
           team?: string | null
+          total_score?: number
           tricks_won?: Json
         }
         Relationships: [
