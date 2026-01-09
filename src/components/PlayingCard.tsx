@@ -77,10 +77,9 @@ export const PlayingCard = ({
         'border-2 card-shadow',
         'flex flex-col items-center justify-between p-1.5',
         'transition-all duration-200',
-        isPlayable && 'cursor-pointer hover:-translate-y-3 hover:shadow-xl hover:z-10',
+        isPlayable && 'cursor-pointer hover:-translate-y-3 hover:shadow-xl hover:z-10 border-gold/50 glow-gold',
         isSelected && 'ring-2 ring-gold -translate-y-4 shadow-xl z-10',
-        !isPlayable && !isSelected && 'border-cream-dark/50',
-        isPlayable && 'border-gold/50 glow-gold',
+        !isPlayable && !isSelected && 'border-cream-dark/30',
         isAnimating && 'animate-[deal_0.5s_ease-out_forwards]',
         className
       )}
