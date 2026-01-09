@@ -457,7 +457,7 @@ serve(async (req) => {
           .eq("room_id", roomId)
           .eq("player_id", playerId);
 
-        // Check if bidding is over (only one player left not passed, or we have a bid winner)
+        // Check if bidding is over
         const { data: updatedPlayers } = await supabase
           .from("room_players")
           .select("*")
@@ -465,8 +465,35 @@ serve(async (req) => {
 
         const activeBidders = updatedPlayers?.filter((p: any) => p.is_ready !== false) || [];
         
-        if (activeBidders.length <= 1 && room.bid_winner_id) {
-          // Bidding complete - move to playing phase
+        // Find the first bidder of this round (the one who started the bidding)
+        const sortedPlayers = [...room.room_players].sort((a: any, b: any) => a.position - b.position);
+        const firstBidderPosition = (room.round_number - 1) % playerCount;
+        const firstBidder = sortedPlayers[firstBidderPosition];
+        
+        // Bidding ends when:
+        // 1. Only one active bidder left with a bid, OR
+        // 2. All players have passed (everyone passed including the one who said "100")
+        const allPassed = activeBidders.length === 0 || 
+                          (activeBidders.length === 1 && !room.bid_winner_id);
+        const oneBidderLeft = activeBidders.length <= 1 && room.bid_winner_id;
+        
+        if (allPassed || oneBidderLeft) {
+          // Determine bid winner
+          // If someone bid, they win. If everyone passed, first bidder wins with 100.
+          const finalBidWinnerId = room.bid_winner_id || firstBidder?.player_id;
+          const finalBid = room.bid_winner_id ? room.current_bid : 100;
+          
+          // Update bid winner if everyone passed
+          if (!room.bid_winner_id) {
+            await supabase
+              .from("rooms")
+              .update({ 
+                bid_winner_id: finalBidWinnerId,
+                current_bid: 100 
+              })
+              .eq("id", roomId);
+          }
+          
           // Give musik cards to bid winner
           const { data: musik } = await supabase
             .from("musik")
@@ -475,7 +502,7 @@ serve(async (req) => {
             .maybeSingle();
 
           if (musik && musik.cards) {
-            const bidWinner = updatedPlayers?.find((p: any) => p.player_id === room.bid_winner_id);
+            const bidWinner = updatedPlayers?.find((p: any) => p.player_id === finalBidWinnerId);
             if (bidWinner) {
               const newCards = [...(bidWinner.cards || []), ...musik.cards];
               await supabase
@@ -491,15 +518,17 @@ serve(async (req) => {
               .eq("room_id", roomId);
           }
 
-          // Go directly to playing phase - no trump selection
-          // Trump will be set when first meld is declared
+          // Go directly to playing phase
           await supabase
             .from("rooms")
             .update({ 
               phase: "playing",
-              current_player_id: room.bid_winner_id // Bid winner starts
+              current_player_id: finalBidWinnerId,
+              bid_winner_id: finalBidWinnerId // Ensure bid winner is set
             })
             .eq("id", roomId);
+            
+          console.log(`[GameServer] Bidding complete. Winner: ${finalBidWinnerId}, Bid: ${finalBid}`);
         } else {
           // Move to next player who hasn't passed
           const currentPlayer = room.room_players.find((p: any) => p.player_id === playerId);
