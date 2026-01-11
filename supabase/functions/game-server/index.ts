@@ -10,7 +10,7 @@ const corsHeaders = {
 const SUITS = ["hearts", "diamonds", "clubs", "spades"] as const;
 const RANKS = ["A", "10", "K", "Q", "J", "9"] as const;
 const CARD_POINTS: Record<string, number> = { A: 11, "10": 10, K: 4, Q: 3, J: 2, "9": 0 };
-const MELD_POINTS: Record<string, number> = { spades: 40, clubs: 60, diamonds: 80, hearts: 100 };
+const MELD_POINTS: Record<string, number> = { diamonds: 40, hearts: 60, spades: 80, clubs: 100 };
 
 interface Card {
   suit: typeof SUITS[number];
@@ -968,6 +968,8 @@ serve(async (req) => {
 async function finishRoundAndStartNew(supabase: any, roomId: string, room: any) {
   const playerCount = room.room_players.length;
   const isTeamMode = room.game_mode === 'teams';
+  const bidWinnerId = room.bid_winner_id;
+  const currentBid = room.current_bid || 100;
   
   // Fetch fresh player data (with updated melds and scores)
   const { data: freshPlayers } = await supabase
@@ -993,10 +995,26 @@ async function finishRoundAndStartNew(supabase: any, roomId: string, room: any) 
     const teamBMelds = teamBPlayers.reduce((sum: number, p: any) => 
       sum + (p.melds || []).reduce((ms: number, m: any) => ms + m.points, 0), 0);
     
-    const newTeamAScore = room.team_a_score + teamARoundScore + teamAMelds;
-    const newTeamBScore = room.team_b_score + teamBRoundScore + teamBMelds;
+    // Check if bid winner's team fulfilled the contract
+    const bidWinner = freshPlayers?.find((p: any) => p.player_id === bidWinnerId);
+    const bidWinnerTeam = bidWinner?.team;
     
-    console.log(`[GameServer] Team scores: A=${newTeamAScore} (round: ${teamARoundScore}, melds: ${teamAMelds}), B=${newTeamBScore} (round: ${teamBRoundScore}, melds: ${teamBMelds})`);
+    let teamAFinalScore = teamARoundScore + teamAMelds;
+    let teamBFinalScore = teamBRoundScore + teamBMelds;
+    
+    // If bid winner's team didn't fulfill the contract, they lose bid points
+    if (bidWinnerTeam === 'A' && teamAFinalScore < currentBid) {
+      teamAFinalScore = -currentBid;
+      console.log(`[GameServer] Team A failed contract ${currentBid}, penalty: -${currentBid}`);
+    } else if (bidWinnerTeam === 'B' && teamBFinalScore < currentBid) {
+      teamBFinalScore = -currentBid;
+      console.log(`[GameServer] Team B failed contract ${currentBid}, penalty: -${currentBid}`);
+    }
+    
+    const newTeamAScore = room.team_a_score + teamAFinalScore;
+    const newTeamBScore = room.team_b_score + teamBFinalScore;
+    
+    console.log(`[GameServer] Team scores: A=${newTeamAScore} (round: ${teamAFinalScore}), B=${newTeamBScore} (round: ${teamBFinalScore})`);
     
     // Check for winner (1000 points)
     if (newTeamAScore >= 1000 || newTeamBScore >= 1000) {
@@ -1016,10 +1034,17 @@ async function finishRoundAndStartNew(supabase: any, roomId: string, room: any) 
     // FFA mode: each player has their own total_score
     for (const player of freshPlayers || []) {
       const meldPoints = (player.melds || []).reduce((sum: number, m: any) => sum + m.points, 0);
-      const roundTotal = (player.round_score || 0) + meldPoints;
+      let roundTotal = (player.round_score || 0) + meldPoints;
+      
+      // Check if this player was the bid winner and didn't fulfill contract
+      if (player.player_id === bidWinnerId && roundTotal < currentBid) {
+        roundTotal = -currentBid;
+        console.log(`[GameServer] Player ${player.nickname} failed contract ${currentBid}, penalty: -${currentBid}`);
+      }
+      
       const newTotalScore = (player.total_score || 0) + roundTotal;
       
-      console.log(`[GameServer] Player ${player.nickname}: round=${player.round_score}, melds=${meldPoints}, total=${newTotalScore}`);
+      console.log(`[GameServer] Player ${player.nickname}: round=${player.round_score}, melds=${meldPoints}, roundTotal=${roundTotal}, total=${newTotalScore}`);
       
       // Update player's total score
       await supabase
