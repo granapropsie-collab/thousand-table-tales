@@ -1,6 +1,6 @@
-import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect, useRef, useCallback } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
-import { ArrowLeft, MessageSquare, Volume2, VolumeX, Trophy } from 'lucide-react';
+import { ArrowLeft, MessageSquare, Volume2, VolumeX, Trophy, Maximize, Minimize } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { GameTable } from '@/components/GameTable';
 import { CardDistribution } from '@/components/CardDistribution';
@@ -27,7 +27,41 @@ const Game = () => {
   const { playSound, toggleSound, soundEnabled } = useSoundEffects();
 
   const [showBidding, setShowBidding] = useState(false);
+  const [isFullscreen, setIsFullscreen] = useState(false);
   const prevIsMyTurn = useRef(isMyTurn);
+
+  // Check fullscreen state
+  useEffect(() => {
+    const handleFullscreenChange = () => {
+      setIsFullscreen(!!document.fullscreenElement);
+    };
+    
+    document.addEventListener('fullscreenchange', handleFullscreenChange);
+    return () => document.removeEventListener('fullscreenchange', handleFullscreenChange);
+  }, []);
+
+  const toggleFullscreen = useCallback(async () => {
+    try {
+      if (!document.fullscreenElement) {
+        await document.documentElement.requestFullscreen();
+        // Lock to landscape on mobile if supported
+        if (screen.orientation && 'lock' in screen.orientation) {
+          try {
+            await (screen.orientation as any).lock('landscape');
+          } catch (e) {
+            // Orientation lock not supported or not allowed
+          }
+        }
+      } else {
+        await document.exitFullscreen();
+        if (screen.orientation && 'unlock' in screen.orientation) {
+          (screen.orientation as any).unlock();
+        }
+      }
+    } catch (e) {
+      console.error('Fullscreen error:', e);
+    }
+  }, []);
 
   // Play sound when it becomes my turn
   useEffect(() => {
@@ -141,6 +175,15 @@ const Game = () => {
             </h1>
             
             <div className="flex items-center gap-1 sm:gap-2">
+              <Button 
+                variant="ghost" 
+                size="sm" 
+                onClick={toggleFullscreen}
+                className="touch-target sm:hidden"
+                title={isFullscreen ? "Wyjdź z pełnego ekranu" : "Pełny ekran"}
+              >
+                {isFullscreen ? <Minimize className="w-4 h-4" /> : <Maximize className="w-4 h-4" />}
+              </Button>
               <Button 
                 variant="ghost" 
                 size="sm" 
