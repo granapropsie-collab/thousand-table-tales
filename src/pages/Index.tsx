@@ -60,7 +60,7 @@ const Index = () => {
             <Spade className="w-10 h-10 text-gold rotate-180" />
           </div>
           <p className="text-center text-muted-foreground mt-2">
-            Klasyczna polska gra karciana • Multiplayer online
+            Kasprzaki & Tokarczyki
           </p>
         </div>
       </header>
