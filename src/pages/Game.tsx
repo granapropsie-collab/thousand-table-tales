@@ -3,6 +3,7 @@ import { useNavigate, useParams } from 'react-router-dom';
 import { ArrowLeft, MessageSquare, Volume2, VolumeX, Trophy } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { GameTable } from '@/components/GameTable';
+import { CardDistribution } from '@/components/CardDistribution';
 import { useGameState } from '@/hooks/useGameState';
 import { useSoundEffects } from '@/hooks/useSoundEffects';
 import tableFeltImage from '@/assets/table-felt.jpg';
@@ -14,10 +15,12 @@ const Game = () => {
     room, 
     currentTrick, 
     playerId, 
+    currentPlayer,
     isMyTurn, 
     bid, 
     pass, 
     playCard,
+    distributeCard,
     isPlayingCard,
     leaveRoom 
   } = useGameState(gameId);
@@ -201,6 +204,15 @@ const Game = () => {
             </div>
           </div>
         </div>
+      )}
+
+      {/* Card Distribution Modal (4-player mode) */}
+      {room.phase === 'distributing' && room.bid_winner_id === playerId && currentPlayer && (
+        <CardDistribution
+          myCards={currentPlayer.cards}
+          otherPlayers={room.room_players.filter(p => p.player_id !== playerId)}
+          onDistribute={distributeCard}
+        />
       )}
 
       {/* Game Finished Modal */}

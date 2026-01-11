@@ -518,17 +518,20 @@ serve(async (req) => {
               .eq("room_id", roomId);
           }
 
-          // Go directly to playing phase
+          // For 4 players, go to distributing phase where bid winner gives 1 card to each player
+          // For 2-3 players, go directly to playing phase
+          const nextPhase = playerCount === 4 ? "distributing" : "playing";
+          
           await supabase
             .from("rooms")
             .update({ 
-              phase: "playing",
+              phase: nextPhase,
               current_player_id: finalBidWinnerId,
               bid_winner_id: finalBidWinnerId // Ensure bid winner is set
             })
             .eq("id", roomId);
             
-          console.log(`[GameServer] Bidding complete. Winner: ${finalBidWinnerId}, Bid: ${finalBid}`);
+          console.log(`[GameServer] Bidding complete. Winner: ${finalBidWinnerId}, Bid: ${finalBid}, Phase: ${nextPhase}`);
         } else {
           // Move to next player who hasn't passed
           const currentPlayer = room.room_players.find((p: any) => p.player_id === playerId);
@@ -602,6 +605,92 @@ serve(async (req) => {
 
         console.log(`[GameServer] Player ${playerId} melded ${suit} (+${meldPoints}), trump is now ${suit}`);
         return new Response(JSON.stringify({ success: true, meldPoints }), {
+          headers: { ...corsHeaders, "Content-Type": "application/json" },
+        });
+      }
+
+      // DISTRIBUTE CARD (4-player mode: bid winner gives 1 card to each other player)
+      case "distribute_card": {
+        const { roomId, playerId, cardId, targetPlayerId } = data;
+
+        const { data: room } = await supabase
+          .from("rooms")
+          .select("*, room_players(*)")
+          .eq("id", roomId)
+          .single();
+
+        if (!room) throw new Error("Room not found");
+        if (room.phase !== "distributing") throw new Error("Not in distributing phase");
+        if (room.bid_winner_id !== playerId) throw new Error("Only bid winner can distribute cards");
+
+        const bidWinner = room.room_players.find((p: any) => p.player_id === playerId);
+        const targetPlayer = room.room_players.find((p: any) => p.player_id === targetPlayerId);
+        
+        if (!bidWinner) throw new Error("Bid winner not found");
+        if (!targetPlayer) throw new Error("Target player not found");
+        if (targetPlayerId === playerId) throw new Error("Cannot give card to yourself");
+
+        const card = bidWinner.cards.find((c: any) => c.id === cardId);
+        if (!card) throw new Error("Card not in hand");
+
+        // Check if this player already received a card (using tricks_won as temp storage)
+        const alreadyReceivedFrom = (targetPlayer.tricks_won || []).filter((t: any) => t.type === 'distributed_card');
+        if (alreadyReceivedFrom.length > 0) {
+          throw new Error("This player already received a card");
+        }
+
+        // Remove card from bid winner's hand
+        const newBidWinnerCards = bidWinner.cards.filter((c: any) => c.id !== cardId);
+        await supabase
+          .from("room_players")
+          .update({ cards: newBidWinnerCards })
+          .eq("id", bidWinner.id);
+
+        // Add card to target player's hand
+        const newTargetCards = [...(targetPlayer.cards || []), card];
+        // Mark that this player received a distributed card
+        const newTricksWon = [...(targetPlayer.tricks_won || []), { type: 'distributed_card', from: playerId }];
+        await supabase
+          .from("room_players")
+          .update({ 
+            cards: newTargetCards,
+            tricks_won: newTricksWon 
+          })
+          .eq("id", targetPlayer.id);
+
+        console.log(`[GameServer] Card ${cardId} distributed from ${playerId} to ${targetPlayerId}`);
+
+        // Check if all 3 cards have been distributed (each other player got 1)
+        const otherPlayers = room.room_players.filter((p: any) => p.player_id !== playerId);
+        const { data: updatedPlayers } = await supabase
+          .from("room_players")
+          .select("*")
+          .eq("room_id", roomId);
+
+        const distributedCount = (updatedPlayers || [])
+          .filter((p: any) => p.player_id !== playerId)
+          .filter((p: any) => (p.tricks_won || []).some((t: any) => t.type === 'distributed_card'))
+          .length;
+
+        if (distributedCount === otherPlayers.length) {
+          // Clear the distributed_card markers and go to playing phase
+          for (const player of (updatedPlayers || [])) {
+            const cleanedTricksWon = (player.tricks_won || []).filter((t: any) => t.type !== 'distributed_card');
+            await supabase
+              .from("room_players")
+              .update({ tricks_won: cleanedTricksWon })
+              .eq("id", player.id);
+          }
+
+          await supabase
+            .from("rooms")
+            .update({ phase: "playing" })
+            .eq("id", roomId);
+
+          console.log(`[GameServer] All cards distributed. Moving to playing phase.`);
+        }
+
+        return new Response(JSON.stringify({ success: true }), {
           headers: { ...corsHeaders, "Content-Type": "application/json" },
         });
       }

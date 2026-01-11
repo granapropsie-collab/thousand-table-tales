@@ -42,7 +42,7 @@ export interface Room {
   current_bid: number;
   bid_winner_id: string | null;
   current_player_id: string | null;
-  phase: 'lobby' | 'dealing' | 'bidding' | 'playing' | 'scoring' | 'finished';
+  phase: 'lobby' | 'dealing' | 'bidding' | 'distributing' | 'playing' | 'scoring' | 'finished';
   round_number: number;
   room_players: RoomPlayer[];
 }
@@ -180,6 +180,12 @@ export const useGameState = (roomId?: string) => {
     await callGameServer('declare_meld', { roomId, suit });
   }, [roomId, callGameServer]);
 
+  // Distribute card (4-player mode: bid winner gives cards to other players)
+  const distributeCard = useCallback(async (cardId: string, targetPlayerId: string) => {
+    if (!roomId) return;
+    await callGameServer('distribute_card', { roomId, cardId, targetPlayerId });
+  }, [roomId, callGameServer]);
+
   // Play card with debounce to prevent double-clicks
   const playCard = useCallback(async (cardId: string) => {
     if (!roomId || isPlayingCard) return;
@@ -257,6 +263,7 @@ export const useGameState = (roomId?: string) => {
     bid,
     pass,
     declareMeld,
+    distributeCard,
     playCard,
     leaveRoom,
     deleteRoom,
